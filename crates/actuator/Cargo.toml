@@ -1,0 +1,16 @@
+[package]
+name = "actuator"
+description = "Servo command model: aim a pan/tilt head at a tracked target, safely"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

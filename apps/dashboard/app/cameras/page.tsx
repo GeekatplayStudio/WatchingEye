@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { TrackOverlay } from "@/components/track-overlay";
 import { AiVisionPanel } from "@/components/ai-vision-panel";
 import { LiveTuning } from "@/components/live-tuning";
+import { ServoPanel } from "@/components/servo-panel";
 import {
   StatusChip,
   IconAction,
@@ -40,8 +41,11 @@ export default function ConsolePage() {
           <StatusChip icon={Brain} name="AI" health={status.ai} detail={status.aiModel} />
           <StatusChip icon={Camera} name="Camera" health={p.connected ? "up" : "unknown"} />
           {p.connected && (
-            <span className="rounded-md border border-border px-2 py-1 font-mono text-xs text-muted-foreground">
-              {p.fps} fps
+            <span
+              className="rounded-md border border-border px-2 py-1 font-mono text-xs text-muted-foreground"
+              title="Frames analyzed per second, and engine round-trip latency"
+            >
+              {p.fps} fps · {p.latencyMs} ms
             </span>
           )}
         </div>
@@ -103,6 +107,8 @@ export default function ConsolePage() {
             {p.outcome !== null && (
               <TrackOverlay
                 regions={p.outcome.regions}
+                target={p.outcome.target}
+                targetId={p.outcome.target_id}
                 gridWidth={p.gridWidth}
                 gridHeight={p.gridHeight}
               />
@@ -139,15 +145,26 @@ export default function ConsolePage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-3">
-            <LiveTuning
-              config={engine.config}
-              update={engine.update}
-              saving={engine.saving}
-            />
-          </CardContent>
-        </Card>
+        <div className="flex flex-col gap-3">
+          <Card>
+            <CardContent className="p-3">
+              <ServoPanel
+                servo={p.outcome?.servo ?? null}
+                target={p.outcome?.target ?? null}
+                connected={p.connected}
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-3">
+              <LiveTuning
+                config={engine.config}
+                update={engine.update}
+                saving={engine.saving}
+              />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

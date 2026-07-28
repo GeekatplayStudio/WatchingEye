@@ -170,6 +170,49 @@ full evidence chain visible in the dashboard.
   Kubernetes manifests; Temporal for long-running workflows; 100-camera
   load test (synthetic streams) with event latency < 300 ms p95.
 
+## Phase A — Animatronics Control (vision → motion)
+
+The vision platform drives an animatronic rig: ESP32/Pi controllers moving
+servos in response to what the cameras and microphones perceive.
+
+### Step A.1 — Aim and servo safety ✅
+- [x] `crates/actuator`: pan/tilt head with travel limits, rate limiting,
+      deadband, and a failsafe that recentres when vision stops arriving
+- [x] Engine picks a target deterministically, emits normalised aim
+      coordinates and a commanded pan/tilt per frame
+- [x] Track velocity reported so clients can extrapolate between updates
+- [x] Console shows commanded angles, aim crosshair, fps and latency
+
+### Step A.2 — Fast tracking
+- [x] Capture paced by `requestAnimationFrame`, not a fixed sleep
+- [x] Overlay redraws at display rate, extrapolating from velocity
+- [ ] Binary frame transport (JSON arrays dominate the round trip)
+- [ ] Face-specific detection — currently the aim point is a heuristic
+      (30% down the tracked region), not a detected face
+- [ ] Measure and publish end-to-end latency budget
+
+### Step A.3 — Device transport (WiFi / Bluetooth)
+- [ ] `crates/transport`: one trait, backends for WebSocket/HTTP over WiFi,
+      BLE, and serial
+- [ ] ESP32 firmware accepts `ServoCommand` frames, applies its own limits
+      (never trust the host), and heartbeats back
+- [ ] Deadman: controller parks the rig if commands stop arriving
+- [ ] Device discovery and pairing UI
+
+### Step A.4 — Logic designer
+Adapting the node-graph editor from the LogiBoard/LogiTensor project
+(React Flow + Zustand, `NodeDefinition`/`PortDefinition` model).
+- [ ] Node types for this domain: camera input, audio input, detection,
+      identity, zone, timer, condition, servo output, sound output
+- [ ] Deterministic evaluation in Rust, mirroring the TS preview engine
+- [ ] Graphs are data: saved, versioned, diffable
+- [ ] Guardrails apply to graph outputs exactly as to model outputs — a
+      graph cannot command a servo outside its limits
+
+### Step A.5 — Audio input
+- [ ] Microphone capture → direction of arrival for "look toward the sound"
+- [ ] Wake-word and command recognition feeding the same logic graph
+
 ## Phase 4.5 — Voice Module (recognize + talk back)
 
 ### Step V.1 — Speech recognition (Whisper) — contracts done

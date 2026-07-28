@@ -26,6 +26,10 @@ pub struct FrameRequest {
     pub height: u32,
     /// Row-major grayscale samples, one byte each.
     pub samples: Vec<u8>,
+    /// Seconds since the client's previous frame. Drives servo rate limiting,
+    /// so it must reflect real elapsed time rather than a nominal frame rate.
+    #[serde(default)]
+    pub dt_secs: Option<f32>,
 }
 
 /// Engine state shared across requests.
@@ -137,6 +141,7 @@ mod tests {
             width: 4,
             height: 4,
             samples: vec![10; 16],
+            dt_secs: Some(0.1),
         };
         let Json(out) = ingest_frame(State(engine()), Json(req)).await;
         assert!(!out.motion);
@@ -150,6 +155,7 @@ mod tests {
             width: 4,
             height: 4,
             samples: vec![10; 5],
+            dt_secs: Some(0.1),
         };
         let Json(out) = ingest_frame(State(engine()), Json(req)).await;
         assert!(out.rejected_reason.is_some());

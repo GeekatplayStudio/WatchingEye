@@ -6,6 +6,7 @@
 
 use crate::api::FrameRequest;
 use crate::config::EngineConfig;
+use actuator::{Head, ServoCommand, Target};
 use camera::Frame;
 use chrono::Utc;
 use motion::{blobs, BackgroundModel};
@@ -31,6 +32,11 @@ pub struct TrackedRegion {
     pub missed_frames: u32,
     /// True once it has satisfied the trigger gate.
     pub gate_open: bool,
+    /// Horizontal movement per frame, in samples. Lets a client extrapolate
+    /// between engine updates so the overlay stays smooth at display rate.
+    pub vx: f32,
+    /// Vertical movement per frame, in samples.
+    pub vy: f32,
 }
 
 /// Everything the pipeline concluded about one frame.
@@ -50,6 +56,12 @@ pub struct FrameOutcome {
     pub rejected_reason: Option<String>,
     /// Human-readable trace of each stage, for the zero-black-box view.
     pub trace: Vec<String>,
+    /// The subject the head should aim at, in normalised coordinates.
+    pub target: Option<Target>,
+    /// Where the pan/tilt head has been commanded to point.
+    pub servo: ServoCommand,
+    /// Id of the region chosen as the aim point.
+    pub target_id: Option<Uuid>,
 }
 
 /// Per-camera pipeline state.
@@ -57,6 +69,57 @@ struct CameraState {
     background: BackgroundModel,
     tracks: Vec<TrackedRegion>,
     frame: u64,
+    head: Head,
+}
+
+/// Choose what the head should aim at.
+///
+/// Confirmed subjects win over unconfirmed ones, then the largest, then the
+/// lowest id — deterministic, so the head does not flick between two equally
+/// good candidates from frame to frame.
+fn pick_target(tracks: &[TrackedRegion]) -> Option<&TrackedRegion> {
+    tracks.iter().max_by(|a, b| {
+        a.gate_open
+            .cmp(&b.gate_open)
+            .then((a.bbox.width * a.bbox.height).total_cmp(&(b.bbox.width * b.bbox.height)))
+            .then(b.id.cmp(&a.id))
+    })
+}
+
+/// Convert a region's centre into normalised aim coordinates.
+///
+/// The aim point sits above centre by a fraction of the region's height:
+/// for a person-shaped blob the head is near the top, so aiming at the
+/// centroid would point the camera at their chest.
+fn aim_point(region: &TrackedRegion, width: u32, height: u32) -> Target {
+    #[allow(clippy::cast_precision_loss)]
+    let (fw, fh) = (width as f32, height as f32);
+    let cx = region.bbox.x + region.bbox.width / 2.0;
+    let cy = region.bbox.y + region.bbox.height * 0.3;
+    Target {
+        x: ((cx / fw) * 2.0 - 1.0).clamp(-1.0, 1.0),
+        y: ((cy / fh) * 2.0 - 1.0).clamp(-1.0, 1.0),
+        area: ((region.bbox.width * region.bbox.height) / (fw * fh)).clamp(0.0, 1.0),
+    }
+}
+
+/// Build the outcome for a frame that never made it through a stage.
+///
+/// The head is still commanded — a bad frame must not leave the servo loop
+/// without instruction, or it would silently keep its last angle forever.
+fn rejected(frame_no: u64, servo: ServoCommand, reason: String, stage: &str) -> FrameOutcome {
+    FrameOutcome {
+        frame: frame_no,
+        motion: false,
+        changed_ratio: 0.0,
+        regions: Vec::new(),
+        triggered: Vec::new(),
+        rejected_reason: Some(reason),
+        trace: vec![stage.to_owned()],
+        target: None,
+        servo,
+        target_id: None,
+    }
 }
 
 /// The live engine. One instance holds state for every connected camera.
@@ -111,6 +174,9 @@ impl Engine {
     pub fn process(&mut self, req: &FrameRequest) -> FrameOutcome {
         let expected = (req.width as usize) * (req.height as usize);
         let config = self.config;
+        // Frame interval reported by the client, clamped to something sane so
+        // a stalled tab cannot command a huge servo step on resume.
+        let dt = req.dt_secs.unwrap_or(0.1).clamp(0.005, 0.5);
         let state = self
             .cameras
             .entry(req.camera_id.clone())
@@ -118,24 +184,22 @@ impl Engine {
                 background: BackgroundModel::new(config.background_alpha, config.sensitivity),
                 tracks: Vec::new(),
                 frame: 0,
+                head: Head::default(),
             });
         state.frame += 1;
         let frame_no = state.frame;
 
         let mut trace = Vec::new();
         if req.samples.len() != expected || expected == 0 {
-            return FrameOutcome {
-                frame: frame_no,
-                motion: false,
-                changed_ratio: 0.0,
-                regions: Vec::new(),
-                triggered: Vec::new(),
-                rejected_reason: Some(format!(
+            return rejected(
+                frame_no,
+                state.head.update(None, dt),
+                format!(
                     "frame validator: expected {expected} samples, got {}",
                     req.samples.len()
-                )),
-                trace: vec!["frame_validator: REJECT".into()],
-            };
+                ),
+                "frame_validator: REJECT",
+            );
         }
         trace.push(format!("frame_validator: PASS ({expected} samples)"));
 
@@ -151,15 +215,12 @@ impl Engine {
         let mask = match state.background.update(&frame) {
             Ok(mask) => mask,
             Err(err) => {
-                return FrameOutcome {
-                    frame: frame_no,
-                    motion: false,
-                    changed_ratio: 0.0,
-                    regions: Vec::new(),
-                    triggered: Vec::new(),
-                    rejected_reason: Some(format!("motion detection: {err}")),
-                    trace: vec!["motion_detection: ERROR".into()],
-                };
+                return rejected(
+                    frame_no,
+                    state.head.update(None, dt),
+                    format!("motion detection: {err}"),
+                    "motion_detection: ERROR",
+                );
             }
         };
         let foreground = mask.changed.iter().filter(|c| **c).count();
@@ -187,6 +248,25 @@ impl Engine {
             config.gate_frames
         ));
 
+        let (target, target_id) = match pick_target(&state.tracks) {
+            Some(region) => (
+                Some(aim_point(region, req.width, req.height)),
+                Some(region.id),
+            ),
+            None => (None, None),
+        };
+        let servo = state.head.update(target, dt);
+        trace.push(format!(
+            "aim: {} -> pan {:.0}° tilt {:.0}° ({})",
+            target.map_or_else(
+                || "no target".to_string(),
+                |t| format!("x {:+.2} y {:+.2}", t.x, t.y)
+            ),
+            servo.pan_deg,
+            servo.tilt_deg,
+            servo.reason
+        ));
+
         FrameOutcome {
             frame: frame_no,
             motion,
@@ -195,6 +275,9 @@ impl Engine {
             triggered,
             rejected_reason: None,
             trace,
+            target,
+            servo,
+            target_id,
         }
     }
 }
@@ -221,6 +304,10 @@ fn update_tracks(
         let Some(track) = state.tracks.get_mut(m.track_index) else {
             continue;
         };
+        // Velocity in samples per frame, so a client can extrapolate between
+        // engine updates rather than waiting for the next one to redraw.
+        track.vx = (region.x + region.width / 2.0) - (track.bbox.x + track.bbox.width / 2.0);
+        track.vy = (region.y + region.height / 2.0) - (track.bbox.y + track.bbox.height / 2.0);
         track.bbox = *region;
         track.seen_frames += 1;
         track.missed_frames = 0;
@@ -249,6 +336,8 @@ fn update_tracks(
                 seen_frames: 1,
                 missed_frames: 0,
                 gate_open: false,
+                vx: 0.0,
+                vy: 0.0,
             });
         }
     }
@@ -281,6 +370,7 @@ mod tests {
             width: 20,
             height: 20,
             samples,
+            dt_secs: Some(0.1),
         }
     }
 
@@ -292,6 +382,7 @@ mod tests {
             width: 20,
             height: 20,
             samples: vec![0; 7],
+            dt_secs: Some(0.1),
         });
         assert!(out.rejected_reason.is_some());
         assert_eq!(out.trace, vec!["frame_validator: REJECT"]);
@@ -398,6 +489,70 @@ mod tests {
     }
 
     #[test]
+    fn the_head_aims_at_a_tracked_subject() {
+        let mut e = Engine::new();
+        e.process(&req(vec![10; 400]));
+        // Subject on the right of the frame.
+        let mut out = e.process(&req(frame_with_square(13, 5, 6)));
+        for _ in 0..10 {
+            out = e.process(&req(frame_with_square(13, 5, 6)));
+        }
+        let target = out
+            .target
+            .expect("a tracked subject should produce a target");
+        assert!(
+            target.x > 0.0,
+            "target on the right must read positive, got {}",
+            target.x
+        );
+        assert!(out.servo.tracking);
+        assert!(out.target_id.is_some());
+    }
+
+    #[test]
+    fn the_head_returns_to_rest_when_nothing_is_there() {
+        let mut e = Engine::new();
+        e.process(&req(vec![10; 400]));
+        for _ in 0..12 {
+            e.process(&req(frame_with_square(13, 5, 6)));
+        }
+        let mut out = e.process(&req(vec![10; 400]));
+        for _ in 0..60 {
+            out = e.process(&req(vec![10; 400]));
+        }
+        assert!(out.target.is_none());
+        assert!(!out.servo.tracking);
+        assert_eq!(out.servo.pan_deg, 90.0, "failsafe must recentre the head");
+    }
+
+    #[test]
+    fn a_rejected_frame_still_commands_the_head_safely() {
+        // A bad frame must not leave the servo loop without a command.
+        let mut e = Engine::new();
+        let out = e.process(&FrameRequest {
+            camera_id: "cam".into(),
+            width: 20,
+            height: 20,
+            samples: vec![0; 3],
+            dt_secs: Some(0.1),
+        });
+        assert!(out.rejected_reason.is_some());
+        assert!(!out.servo.tracking);
+    }
+
+    #[test]
+    fn tracks_report_velocity_for_smooth_extrapolation() {
+        let mut e = Engine::new();
+        e.process(&req(vec![10; 400]));
+        let mut out = e.process(&req(frame_with_square(2, 5, 6)));
+        for step in 1..5 {
+            out = e.process(&req(frame_with_square(2 + step * 2, 5, 6)));
+        }
+        let moving = out.regions.iter().any(|r| r.vx.abs() > 0.0);
+        assert!(moving, "a moving subject should report non-zero velocity");
+    }
+
+    #[test]
     fn cameras_keep_independent_state() {
         let mut e = Engine::new();
         e.process(&req(vec![10; 400]));
@@ -406,6 +561,7 @@ mod tests {
             width: 20,
             height: 20,
             samples: vec![10; 400],
+            dt_secs: Some(0.1),
         };
         let out = e.process(&other);
         assert_eq!(out.frame, 1, "a second camera starts its own frame count");

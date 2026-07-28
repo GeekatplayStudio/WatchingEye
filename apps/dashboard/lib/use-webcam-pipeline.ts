@@ -22,6 +22,24 @@ export interface TrackedRegion {
   seen_frames: number;
   missed_frames: number;
   gate_open: boolean;
+  /** Samples per frame, used to extrapolate between engine updates. */
+  vx: number;
+  vy: number;
+}
+
+/** Where the head is aiming, in normalised coordinates. */
+export interface AimTarget {
+  x: number;
+  y: number;
+  area: number;
+}
+
+/** Pan/tilt command the engine produced for this frame. */
+export interface ServoCommand {
+  pan_deg: number;
+  tilt_deg: number;
+  tracking: boolean;
+  reason: string;
 }
 
 /** Everything the engine concluded about one frame. */
@@ -33,6 +51,9 @@ export interface FrameOutcome {
   triggered: string[];
   rejected_reason: string | null;
   trace: string[];
+  target: AimTarget | null;
+  servo: ServoCommand;
+  target_id: string | null;
 }
 
 /** A camera the browser can see. */
@@ -74,6 +95,8 @@ interface PipelineState {
   error: string | null;
   outcome: FrameOutcome | null;
   fps: number;
+  /** Round-trip time to the engine, in milliseconds. */
+  latencyMs: number;
   classifications: Classification[];
   classifying: boolean;
 }
@@ -93,6 +116,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
     error: null,
     outcome: null,
     fps: 0,
+    latencyMs: 0,
     classifications: [],
     classifying: false,
   });
@@ -101,6 +125,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
   const snapshotRef = useRef<HTMLCanvasElement | null>(null);
   const runningRef = useRef(false);
   const framesRef = useRef<number[]>([]);
+  const lastFrameAtRef = useRef(0);
   const classifiedRef = useRef<Set<string>>(new Set());
 
   const scan = useCallback(async () => {
@@ -187,6 +212,9 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
         samples[i] =
           (0.299 * (data[o] ?? 0) + 0.587 * (data[o + 1] ?? 0) + 0.114 * (data[o + 2] ?? 0)) | 0;
       }
+      const sentAt = performance.now();
+      const dtSecs = lastFrameAtRef.current === 0 ? 0.1 : (sentAt - lastFrameAtRef.current) / 1000;
+      lastFrameAtRef.current = sentAt;
       try {
         const res = await fetch("/engine/api/frame", {
           method: "POST",
@@ -196,13 +224,20 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
             width: GRID_WIDTH,
             height: GRID_HEIGHT,
             samples,
+            dt_secs: dtSecs,
           }),
         });
         if (!res.ok) throw new Error(`engine ${res.status}`);
         const outcome = (await res.json()) as FrameOutcome;
         const now = performance.now();
         framesRef.current = [...framesRef.current, now].filter((t) => now - t < 1000);
-        setState((s) => ({ ...s, outcome, fps: framesRef.current.length, error: null }));
+        setState((s) => ({
+          ...s,
+          outcome,
+          fps: framesRef.current.length,
+          latencyMs: Math.round(now - sentAt),
+          error: null,
+        }));
 
         // The gate opened: this is the only moment a model is consulted.
         for (const objectId of outcome.triggered) {
@@ -220,7 +255,10 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
         }));
         await new Promise((r) => setTimeout(r, 1000));
       }
-      await new Promise((r) => setTimeout(r, 80));
+      // Yield to the next paint rather than sleeping a fixed interval: the
+      // capture rate then follows whatever the machine can actually sustain
+      // instead of being pinned to an arbitrary ceiling.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
     }
   }, [videoRef]);
 
