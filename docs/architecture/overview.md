@@ -1,42 +1,105 @@
 # Architecture Overview
 
+## Pipeline (desktop hub)
+
 ```mermaid
 flowchart TD
-    C[Camera<br/>ESP32 / Pi / RTSP / USB] --> FB[Frame Buffer]
+    C[Camera<br/>webcam / RTSP / USB] --> FB[Frame Buffer]
     FB --> FV[Frame Validator]
-    FV --> MD[Motion Detection]
-    MD --> OD[Object Detector<br/>trait Detector]
-    OD --> CV[Confidence Validator]
-    CV --> TV[Temporal Validator]
-    TV --> TR[Tracker<br/>UUID + timeline]
-    TR --> ODB[(Object Database<br/>SQLite / Postgres)]
-    TR --> GATE{TriggerGate<br/>conf ≥ 0.95 AND<br/>3 consecutive frames}
-    GATE -- closed --> ODB
-    GATE -- open --> SA[Super Agent<br/>Rig + Ollama VLM]
-    SA --> GR[Guardrails<br/>schema → range → confidence → policy]
-    GR -- reject --> SAFE[Safe default + log]
-    GR -- pass --> RE[Rule Engine<br/>IF/AND/THEN]
+    FV --> BG[Background Model<br/>motion crate]
+    BG --> BL[Blob Extraction]
+    BL --> TR[Tracker<br/>IoU association, UUID + timeline]
+    TR --> SP[Motion Vector<br/>spatial::motion — heading + speed]
+    TR --> AIM[Aim Point<br/>actuator::Head — pan/tilt + failsafe]
+    TR --> GATE{TriggerGate<br/>conf ≥ threshold AND<br/>N consecutive frames}
+    GATE -- closed --> DONE[No action]
+    GATE -- open --> VLM[Super Agent<br/>Ollama qwen2.5vl via LangGraph]
+    VLM --> GR[Guardrails<br/>schema → range → confidence → policy → safety]
+    GR -- reject --> SAFE[Safe default + logged reason]
+    GR -- pass --> ID[Identity Registry<br/>deterministic re-identification]
+    ID --> RE[Rule Engine<br/>IF/AND/THEN]
     RE --> ACT[Actions / Notifications]
+
+    C -.->|full snapshot, ~1.2s cadence| YOLO[YOLO11 ONNX<br/>stationary-object labelling]
+    YOLO --> DIST[Distance Estimate<br/>spatial::distance — pinhole model]
+
     ACT --> GW[Node Gateway]
-    GW --> UI[React Dashboard<br/>zero-black-box view]
+    GR --> GW
+    GW --> UI[Next.js Dashboard<br/>zero-black-box console]
 ```
+
+Two independent paths run over the same camera feed:
+- **Motion path** (Rust, every frame): background subtraction → blobs →
+  tracking → heading/aim/gate. Fast, blind to anything not moving.
+- **Detection path** (YOLO, ~1.2s cadence): full-frame labelling, so a
+  parked car or seated person still gets a name. See ADR 0004 for why this
+  runs in the Node orchestrator rather than Rust today.
+
+The Super Agent (VLM classification) only runs when the motion path's gate
+opens — never continuously, never per frame.
+
+## Two applications, one workspace
+
+```mermaid
+flowchart LR
+    subgraph Desktop Hub
+        VE[vision-engine :8090<br/>Rust, axum]
+        AO[agent-orchestrator :8085<br/>Node, LangGraph + YOLO]
+        GW2[gateway :8080<br/>Fastify]
+        DB[dashboard :3000<br/>Next.js]
+    end
+    subgraph Edge Node
+        EN[edge-node<br/>Rust, tiny_http, 309KB]
+    end
+    VE <-- wire-compatible --> EN
+    GW2 --> AO
+    GW2 --> VE
+    DB --> GW2
+    DB -.direct proxy.-> VE
+```
+
+`edge-node` shares the frame-request/response JSON contract with
+`vision-engine`, so a Pi-class device can stand in for the desktop engine
+without either the gateway or dashboard changing.
 
 ## Crate dependency graph
 
-`schemas` is the root; everything depends on it and nothing depends back:
+`schemas` is the dependency root; everything may depend on it, it depends on
+nothing internal:
 
 ```
 schemas ← events ← rules
 schemas ← guardrails
 schemas ← camera ← detector
-schemas ← tracker
-all     ← services/vision-engine
+schemas ← motion (+ camera)
+schemas ← tracker (+ motion for association reuse)
+schemas ← identity
+camera, motion, tracker, actuator, spatial ← services/vision-engine
+camera, motion, tracker, actuator, spatial ← services/edge-node
 ```
+
+| Crate | Responsibility |
+|---|---|
+| `schemas` | Shared types: `ObjectClass`, `Detection`, `AgentDecision`, `Provenance` |
+| `events` | Typed lifecycle events (`Detected`, `EnteredZone`, ...) |
+| `rules` | Declarative IF/AND/THEN rule engine |
+| `guardrails` | LLM output validation: schema → range → confidence → policy → safety screen |
+| `camera` | `CameraSource` trait — one interface, many backends |
+| `motion` | Background-model motion detection + connected-component blob extraction |
+| `tracker` | IoU-based association, `TriggerGate`, object timelines |
+| `identity` | Deterministic re-identification (weighted attribute matching, never a model) |
+| `actuator` | Pan/tilt servo control: limits, rate limiting, deadband, failsafe |
+| `spatial` | Motion heading/speed + monocular distance estimation |
+| `detector` | `Detector` trait (target interface; current YOLO lives in the orchestrator, see ADR 0004) |
 
 ## Where things go
 
-- New camera backend → implement `camera::CameraSource` in `crates/camera/src/backends/`
-- New vision model → implement `detector::Detector` in `crates/detector/src/backends/`
+- New camera backend → implement `camera::CameraSource`
+- New vision model (Rust-side) → implement `detector::Detector`
 - New event type → `events::EventKind` variant + rule conditions
-- New guardrail gate → add to `guardrails::validate` (order matters; document it)
-- MCP servers wrap each crate at the service boundary (Phase 3)
+- New guardrail gate → add to `guardrails::validate` / `guardrails::safety`
+  (order matters; document it) and mirror in
+  `services/agent-orchestrator/src/screen.ts`
+- New identity attribute → `identity::descriptor::strength_of` classification
+- New servo axis or animatronic behavior → `crates/actuator`
+- MCP servers wrap each subsystem at the service boundary (`packages/mcp-server`)

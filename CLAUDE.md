@@ -34,10 +34,14 @@ Project subagents live in `.claude/agents/`. Delegate to them by name:
 
 - Rust: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo fmt --all`
+- Rust perf bench: `cargo run -p motion --example bench --release`
 - Gateway: `cd apps/gateway && npm test`
 - Orchestrator: `cd services/agent-orchestrator && npm test`
-- Dashboard: `cd apps/dashboard && npm run dev` (proxies /api to :8080)
+- Dashboard: `cd apps/dashboard && npm run dev` (proxies /api to :8080, /engine to :8090)
 - Postgres: `docker compose up -d` (pgvector; gateway falls back to memory)
+- Start/stop everything: `Start-WatchingEye.bat` / `Stop-WatchingEye.bat`
+  (or `./start.sh` / `./scripts/stop.sh`) — prefer these over manual
+  `cargo run` in a fresh terminal; they set up PATH and avoid port collisions
 
 ### Windows toolchain note
 
@@ -56,8 +60,16 @@ clippy::float_cmp)]` — production code stays strict, tests stay readable.
 ## Layout
 
 - `crates/schemas` — root types; everything depends on it, it depends on nothing internal
-- `crates/{events,rules,guardrails,camera,detector,tracker}` — one concern each
-- `services/vision-engine` — pipeline wiring (stub backends today)
+- `crates/{events,rules,guardrails,camera,motion,tracker,identity,actuator,spatial,detector}` — one concern each
+- `services/vision-engine` — desktop pipeline (axum): motion, tracking, aim, identity registry
+- `services/edge-node` — same deterministic chain, sized for Pi-class devices (tiny_http, 309 KB, no async runtime)
+- `services/agent-orchestrator` — LangGraph Super Agent (TS): VLM classification, YOLO detection via onnxruntime-node, zod guardrails
 - `apps/gateway` — Fastify proxy, **no AI logic allowed here**
-- `apps/dashboard` — React UI
-- `edge/esp32` — firmware skeleton, separate toolchain, **no AI on device**
+- `apps/dashboard` — Next.js UI (the live "Console" is the primary screen)
+- `edge/esp32` — firmware skeleton, separate toolchain, **no AI on device** (capture/stream only until a `no_std` port exists — see ROADMAP.md)
+
+Real-code status: the pipeline is live (not stub) — background-model motion
+detection, IoU tracking, servo aim with failsafe, deterministic identity
+matching, and YOLO11 object labelling all run today. See
+`docs/architecture/overview.md` for the current data flow and ADR 0004 for
+why YOLO inference lives in the Node orchestrator rather than Rust.

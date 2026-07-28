@@ -6,7 +6,7 @@ is done (exceptions require an ADR).
 
 ---
 
-## Phase 0 — Foundation (current)
+## Phase 0 — Foundation ✅
 
 ### Step 0.1 — Repo skeleton ✅
 - [x] Cargo workspace with `schemas`, `events`, `rules`, `guardrails`,
@@ -15,16 +15,18 @@ is done (exceptions require an ADR).
 - [x] CI: fmt, clippy `-D warnings`, tests, cargo-deny, docs
 - [x] PRD, ADRs 0001–0002, architecture overview
 
-### Step 0.2 — Toolchain & scripts
+### Step 0.2 — Toolchain & scripts ✅
 - Exit criteria:
-  - [ ] `scripts/install.ps1` / `scripts/install.sh` bring a clean machine to
+  - [x] `scripts/install.ps1` / `scripts/install.sh` bring a clean machine to
         a working build (Rust via rustup, Node deps)
-  - [ ] `scripts/install-models` provisions all AI models: Ollama +
+  - [x] `scripts/install-models` provisions all AI models: Ollama +
         qwen2.5vl:7b (VLM), llama3.2:3b (LLM), yolo11n.onnx (detection),
         Whisper ggml-base.en (voice)
-  - [ ] `scripts/run.ps1` / `scripts/run.sh` start engine, gateway, dashboard
-  - [ ] `cargo test --workspace` green locally and in CI
-  - [ ] `git init` + first commit + CI green on main
+  - [x] `Start-WatchingEye.bat`/`start.sh` and `Stop-WatchingEye.bat`/`stop.sh`
+        start/stop engine, orchestrator, gateway, dashboard as one stack, with
+        port-conflict fallback and clean shutdown
+  - [x] `cargo test --workspace` green (168 tests) locally
+  - [x] `git init` + first commit + pushed to GitHub, CI configured
 
 ---
 
