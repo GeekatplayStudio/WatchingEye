@@ -6,6 +6,7 @@ members = [
     "crates/rules",
     "crates/guardrails",
     "crates/camera",
+    "crates/motion",
     "crates/detector",
     "crates/tracker",
     "services/vision-engine",

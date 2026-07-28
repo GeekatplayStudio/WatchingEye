@@ -74,6 +74,7 @@ impl Event {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
     use super::*;
 
     #[test]
@@ -81,7 +82,9 @@ mod tests {
         let e = Event::new(
             Uuid::new_v4(),
             ObjectClass::Person,
-            EventKind::EnteredZone { zone: "garage".into() },
+            EventKind::EnteredZone {
+                zone: "garage".into(),
+            },
             "cam-1",
         );
         let json = serde_json::to_string(&e).unwrap();

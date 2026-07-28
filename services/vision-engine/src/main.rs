@@ -1,6 +1,6 @@
 //! Vision engine — wires the deterministic pipeline together.
 //!
-//! Camera → Detector → confidence filter → Tracker → TriggerGate →
+//! Camera → Detector → confidence filter → Tracker → `TriggerGate` →
 //! (Super Agent, stubbed) → Guardrails → Rules → Actions.
 //!
 //! This binary currently runs the pipeline against stub backends so the

@@ -38,12 +38,14 @@ is done (exceptions require an ADR).
   - [ ] Golden-file integration test: fixed video in, fixed frame count out
   - [ ] Frame validator rejects corrupt/truncated frames with typed errors
 
-### Step 1.2 — Motion detection
+### Step 1.2 — Motion detection ✅ (core algorithm)
 - Frame-differencing motion gate in Rust (no ML), configurable sensitivity.
 - Exit criteria:
-  - [ ] Static scene produces zero detector invocations over 1000 frames
-  - [ ] Motion clip triggers detector within 2 frames of first movement
-  - [ ] Property test: output invariant to constant brightness offsets
+  - [x] `crates/motion`: brightness-compensated frame differencing, 7 tests
+  - [x] Static scene reports no motion; localized change does
+  - [x] Invariant to constant brightness offsets (cloud/auto-exposure test)
+  - [ ] Wired into `vision-engine` against a real camera stream
+  - [ ] 1000-frame soak test proving zero detector invocations when static
 
 ### Step 1.3 — ONNX YOLO detector backend
 - Implement `Detector` with ONNX Runtime; YOLO11-nano quantized model.
@@ -52,9 +54,12 @@ is done (exceptions require an ADR).
   - [ ] Detection latency < 100 ms on CPU (benchmark in CI, regression-gated)
   - [ ] Model file resolved via config; missing model = clean typed error
 
-### Step 1.4 — Temporal validation + tracker hardening
+### Step 1.4 — Temporal validation + tracker hardening (in progress)
 - Replace naive class-matching with IoU association; add `Lost` events.
 - Exit criteria:
+  - [x] `tracker::association`: IoU + greedy matching, 8 tests, deterministic
+        tie-breaking; two adjacent people keep distinct tracks
+  - [ ] `Tracker::observe` switched from class-matching to IoU association
   - [ ] Two people in frame keep distinct UUIDs across 100 frames
   - [ ] `TriggerGate` fires exactly once per continuous presence
   - [ ] Snapshot tests of full event streams for 3 fixture videos
@@ -73,13 +78,27 @@ row + snapshot in SQLite; dashboard timeline shows it. No LLM yet.
 
 ## Phase 2 — Super Agent with Guardrails
 
-### Step 2.1 — Ollama client (LLM abstraction layer)
-- Rust client behind an `LlmProvider` trait; Ollama first, OpenAI-compatible
-  second. Structured-output requests only (JSON mode).
+### Step 2.1 — Ollama client (LLM abstraction layer) ✅
 - Exit criteria:
-  - [ ] Trait mock allows full pipeline tests with zero network
-  - [ ] Provenance (model version, prompt version) captured on every call
-  - [ ] Timeout + retry policy is deterministic and configurable
+  - [x] `LlmProvider` interface + `OllamaProvider` + `StubProvider`
+        (`services/agent-orchestrator/src/llm.ts`), 6 tests, zero network
+  - [x] Provenance (model version, prompt version) on every response
+  - [x] Deterministic sampling (temperature 0, fixed seed) and timeouts
+  - [ ] Rust-side provider for the engine (currently TS service only)
+
+### Step 2.1b — AI-safety screening ✅
+- Exit criteria:
+  - [x] `guardrails::safety`: prompt-injection markers, duplicate-evidence
+        detection, unsupported-risk check, and a rule that the model may not
+        reclassify what the deterministic pipeline detected — 9 tests
+  - [x] `validate_and_screen` is the single production entry point
+
+### Step 2.1c — RAG grounding ✅ (retrieval half)
+- Exit criteria:
+  - [x] `KeywordRetriever` fallback that needs no vector DB (PRD: optional)
+  - [x] `verifyGrounded` rejects answers citing unretrieved records — the
+        anti-hallucination gate for question answering, 9 tests
+  - [ ] pgvector-backed retriever for semantic search
 
 ### Step 2.2 — VLM scene analysis
 - On `TriggerGate` open: send snapshot to VLM (qwen2.5-vl via Ollama),
@@ -153,16 +172,21 @@ full evidence chain visible in the dashboard.
 
 ## Phase 4.5 — Voice Module (recognize + talk back)
 
-### Step V.1 — Speech recognition (Whisper)
+### Step V.1 — Speech recognition (Whisper) — contracts done
 - Exit criteria:
-  - [ ] Local Whisper STT (whisper-rs, model from `scripts/install-models`)
-  - [ ] Spoken commands ("show the driveway", "arm night mode") parsed into
-        a structured `VoiceCommand` schema — free text never executes
-  - [ ] Commands pass the same guardrail pipeline as vision decisions
+  - [x] `VoiceCommand` closed schema + rule-based `parseTranscript`:
+        unrecognized speech is **rejected, never guessed**; a spoken
+        injection attempt fails to parse (tested)
+  - [x] `SpeechRecognizer` / `SpeechSynthesizer` interfaces for DI
+  - [ ] Whisper binding wired to `SpeechRecognizer` (model already installed
+        by `scripts/install-models` at `models/voice/ggml-base.en.bin`)
+  - [ ] Commands routed through the guardrail pipeline before actuating
   - [ ] Audio-event detection: glass break, shout, doorbell → rule engine
 
 ### Step V.2 — Voice response (TTS talk-back)
 - Exit criteria:
+  - [x] `renderSpeech` templates speech from validated facts only — the
+        system cannot say something the data doesn't support (tested)
   - [ ] Local Piper TTS: spoken alerts ("person at the front door") and
         command confirmations
   - [ ] Every utterance is the rendering of a validated, logged decision

@@ -1,7 +1,7 @@
 //! End-to-end pipeline wiring with stub camera/detector backends.
 //!
 //! The stubs are deterministic so the integration test proves the full
-//! chain: detect → filter → track → gate → guardrails → rules → actions.
+//! chain: detect â†’ filter â†’ track â†’ gate â†’ guardrails â†’ rules â†’ actions.
 
 use chrono::Utc;
 use detector::filter_by_confidence;
@@ -31,7 +31,12 @@ fn stub_detections() -> Vec<Detection> {
     let mk = |frame: u64, confidence: f32| Detection {
         class: ObjectClass::Person,
         confidence,
-        bbox: BoundingBox { x: 10.0, y: 10.0, width: 50.0, height: 120.0 },
+        bbox: BoundingBox {
+            x: 10.0,
+            y: 10.0,
+            width: 50.0,
+            height: 120.0,
+        },
         frame,
         model: "stub-yolo".into(),
         timestamp: Utc::now(),
@@ -86,7 +91,9 @@ pub fn run_demo() -> RunReport {
             let event = Event::new(
                 id,
                 ObjectClass::Person,
-                EventKind::EnteredZone { zone: "garage".into() },
+                EventKind::EnteredZone {
+                    zone: "garage".into(),
+                },
                 "stub-cam",
             );
             let rules = vec![Rule {
@@ -95,17 +102,25 @@ pub fn run_demo() -> RunReport {
                     Condition::IsClass(ObjectClass::Person),
                     Condition::InZone("garage".into()),
                 ],
-                action: Action::Notify { channel: "default".into() },
+                action: Action::Notify {
+                    channel: "default".into(),
+                },
             }];
             (true, validated, rules::evaluate(&rules, &event))
         }
     };
 
-    RunReport { validated_detections, agent_triggered, decision_validated, actions }
+    RunReport {
+        validated_detections,
+        agent_triggered,
+        decision_validated,
+        actions,
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
     use super::*;
 
     #[test]
@@ -114,6 +129,11 @@ mod tests {
         assert_eq!(report.validated_detections, 3);
         assert!(report.agent_triggered);
         assert!(report.decision_validated);
-        assert_eq!(report.actions, vec![Action::Notify { channel: "default".into() }]);
+        assert_eq!(
+            report.actions,
+            vec![Action::Notify {
+                channel: "default".into()
+            }]
+        );
     }
 }

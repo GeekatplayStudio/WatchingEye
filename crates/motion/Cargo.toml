@@ -1,0 +1,16 @@
+[package]
+name = "motion"
+description = "Frame-differencing motion detection: the pre-filter that keeps the detector idle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+camera = { path = "../camera" }
+thiserror.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+
+[lints]
+workspace = true

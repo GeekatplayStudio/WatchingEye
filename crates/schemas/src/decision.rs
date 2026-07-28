@@ -1,7 +1,7 @@
 //! Agent decision types with full zero-black-box provenance.
 
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A single piece of evidence supporting a decision.
@@ -48,6 +48,7 @@ pub struct AgentDecision {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
     use super::*;
 
     #[test]

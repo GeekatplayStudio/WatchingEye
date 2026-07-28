@@ -47,6 +47,7 @@ pub struct ValidatedDetection {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
     use super::*;
 
     #[test]
@@ -54,7 +55,12 @@ mod tests {
         let d = Detection {
             class: ObjectClass::Dog,
             confidence: 0.97,
-            bbox: BoundingBox { x: 1.0, y: 2.0, width: 3.0, height: 4.0 },
+            bbox: BoundingBox {
+                x: 1.0,
+                y: 2.0,
+                width: 3.0,
+                height: 4.0,
+            },
             frame: 42,
             model: "yolo11-nano".into(),
             timestamp: Utc::now(),

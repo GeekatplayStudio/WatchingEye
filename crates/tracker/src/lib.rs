@@ -5,6 +5,8 @@
 //! earned a super-agent invocation. The agent NEVER runs continuously; it
 //! runs only when [`TriggerGate::should_trigger`] returns `true`.
 
+pub mod association;
+
 use schemas::{Detection, TrackedObject};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -23,7 +25,10 @@ pub struct TriggerGate {
 
 impl Default for TriggerGate {
     fn default() -> Self {
-        Self { min_confidence: 0.95, consecutive_frames: 3 }
+        Self {
+            min_confidence: 0.95,
+            consecutive_frames: 3,
+        }
     }
 }
 
@@ -90,6 +95,7 @@ impl Tracker {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
     use super::*;
     use chrono::Utc;
     use schemas::detection::BoundingBox;
@@ -99,7 +105,12 @@ mod tests {
         Detection {
             class: ObjectClass::Person,
             confidence,
-            bbox: BoundingBox { x: 0.0, y: 0.0, width: 1.0, height: 1.0 },
+            bbox: BoundingBox {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
             frame,
             model: "test".into(),
             timestamp: Utc::now(),

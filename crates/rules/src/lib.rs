@@ -104,6 +104,7 @@ pub fn evaluate(rules: &[Rule], event: &Event) -> Vec<Action> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
     use super::*;
     use uuid::Uuid;
 
@@ -111,7 +112,9 @@ mod tests {
         Event::new(
             Uuid::new_v4(),
             class,
-            EventKind::EnteredZone { zone: "garage".into() },
+            EventKind::EnteredZone {
+                zone: "garage".into(),
+            },
             "cam-1",
         )
     }
@@ -123,14 +126,21 @@ mod tests {
                 Condition::IsClass(ObjectClass::Person),
                 Condition::InZone("garage".into()),
             ],
-            action: Action::Notify { channel: "default".into() },
+            action: Action::Notify {
+                channel: "default".into(),
+            },
         }
     }
 
     #[test]
     fn rule_fires_when_all_conditions_match() {
         let actions = evaluate(&[person_garage_rule()], &garage_event(ObjectClass::Person));
-        assert_eq!(actions, vec![Action::Notify { channel: "default".into() }]);
+        assert_eq!(
+            actions,
+            vec![Action::Notify {
+                channel: "default".into()
+            }]
+        );
     }
 
     #[test]
@@ -148,7 +158,8 @@ mod tests {
             .and_then(|t| t.with_minute(0))
             .unwrap();
         let mut rule = person_garage_rule();
-        rule.conditions.push(Condition::HourBetween { start: 0, end: 5 });
+        rule.conditions
+            .push(Condition::HourBetween { start: 0, end: 5 });
         assert_eq!(evaluate(&[rule], &event).len(), 1);
     }
 }

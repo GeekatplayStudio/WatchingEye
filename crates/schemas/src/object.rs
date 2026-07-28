@@ -92,6 +92,7 @@ impl TrackedObject {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
     use super::*;
 
     fn obj(frames: Vec<u64>) -> TrackedObject {

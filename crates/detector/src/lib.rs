@@ -1,6 +1,6 @@
 //! Object detector abstraction.
 //!
-//! Every vision model (YOLO nano→11, GroundingDINO, Florence, Qwen-VL, …)
+//! Every vision model (`YOLO` nano→11, `GroundingDINO`, Florence, Qwen-VL, …)
 //! implements [`Detector`]. ONNX Runtime / Candle backends live in separate
 //! modules; the pipeline depends only on the trait.
 
@@ -48,6 +48,7 @@ pub fn filter_by_confidence(detections: Vec<Detection>, min_confidence: f32) -> 
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
     use super::*;
     use chrono::Utc;
     use schemas::detection::BoundingBox;
@@ -57,7 +58,12 @@ mod tests {
         Detection {
             class: ObjectClass::Person,
             confidence,
-            bbox: BoundingBox { x: 0.0, y: 0.0, width: 1.0, height: 1.0 },
+            bbox: BoundingBox {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
             frame: 1,
             model: "test".into(),
             timestamp: Utc::now(),
