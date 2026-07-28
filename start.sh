@@ -80,9 +80,9 @@ if [ "$READY" = "1" ]; then
     fi
     printf '\n\033[32mWatchingEye is running:\033[0m\n'
     echo "  Dashboard      http://localhost:3000"
-    echo "  Cameras        http://localhost:3000/cameras   <- connect your webcam here"
+    echo "  Console        http://localhost:3000/cameras   <- connect your webcam here"
     echo "  Documentation  http://localhost:3000/docs"
-    printf '\nPress Ctrl+C to stop everything.\n'
+    printf '\nPress Ctrl+C, or run ./scripts/stop.sh, to stop everything.\n'
     wait
 else
     warn "dashboard did not respond within 60s"

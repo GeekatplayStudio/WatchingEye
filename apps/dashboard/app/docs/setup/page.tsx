@@ -54,7 +54,20 @@ cd services/agent-orchestrator && npm run dev  # recognition,    port 8085
 cd apps/gateway && npm run dev                 # API gateway,    port 8080
 cd apps/dashboard && npm run dev               # this dashboard, port 3000`}</Cmd>
         The dashboard works without the engine — you simply will not get live camera tracking,
-        and the Cameras page will tell you so rather than failing silently.
+        and the Console will tell you so rather than failing silently.
+      </DocSection>
+
+      <DocSection title="Stopping, and port conflicts">
+        <Cmd>{`Stop-WatchingEye.bat     # Windows
+./scripts/stop.sh        # macOS / Linux`}</Cmd>
+        This stops only processes listening on this project&apos;s ports (3000, 8080, 8085,
+        8090–8099), so other work on the machine is untouched.
+        <p>
+          If the engine finds its port occupied it moves to the next free one rather than
+          refusing to start, and writes the choice to <code>.runtime/engine.port</code>. The
+          dashboard reads that file when it starts, so restart the dashboard if the engine
+          moved while it was running.
+        </p>
       </DocSection>
 
       <DocSection title="Connecting a camera">

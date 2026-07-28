@@ -45,8 +45,16 @@ That single step installs anything missing (Rust, Node, Ollama, AI models),
 builds the Rust core, starts all three services, and opens the dashboard. It
 is safe to re-run — finished work is detected and skipped.
 
-Then open **[Cameras](http://localhost:3000/cameras)**, click *Scan for
-cameras*, and connect your webcam to watch the pipeline track live.
+Then open **[Console](http://localhost:3000/cameras)**, click *Scan*, and
+connect your webcam to watch the pipeline track live.
+
+**To stop everything:** double-click `Stop-WatchingEye.bat` (Windows) or run
+`./scripts/stop.sh`. It stops only processes listening on this project's
+ports, leaving unrelated work alone.
+
+If the engine's port is busy it moves to the next free one (8090–8099) rather
+than refusing to start, and records where it landed in `.runtime/engine.port`.
+Restart the dashboard afterwards so its proxy picks up the new port.
 
 <details>
 <summary>Running the pieces by hand</summary>

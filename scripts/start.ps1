@@ -130,9 +130,9 @@ if ($ready) {
     Start-Process "http://localhost:3000"
     Write-Host "`nWatchingEye is running:" -ForegroundColor Green
     Write-Host "  Dashboard      http://localhost:3000"
-    Write-Host "  Cameras        http://localhost:3000/cameras   <- connect your webcam here"
+    Write-Host "  Console        http://localhost:3000/cameras   <- connect your webcam here"
     Write-Host "  Documentation  http://localhost:3000/docs"
-    Write-Host "`nClose the service windows to stop." -ForegroundColor DarkGray
+    Write-Host "`nTo stop everything: Stop-WatchingEye.bat" -ForegroundColor DarkGray
 } else {
     Write-Warn2 "dashboard did not respond within 60s - check the service windows"
     exit 1
