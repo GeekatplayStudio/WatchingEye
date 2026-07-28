@@ -23,10 +23,27 @@ export interface ValidatedDecision {
   };
 }
 
+/** Who the registry decided this is. */
+export interface IdentityOutcome {
+  identity_id: string;
+  name: string | null;
+  class: string;
+  is_new: boolean;
+  sightings: number;
+  evidence: {
+    score: number;
+    matched: string[];
+    conflicting: string[];
+    refuted_by: string | null;
+  } | null;
+  unavailableReason?: string;
+}
+
 /** Outcome of a classification attempt. */
 export interface ClassifyResult {
   outcome: "action" | "safe_default";
   decision?: ValidatedDecision | null;
+  identity?: IdentityOutcome | null;
   rejectionReason?: string;
   latencyMs?: number;
 }

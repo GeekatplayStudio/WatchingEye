@@ -168,7 +168,12 @@ export default function CamerasPage() {
             p.classifications.map((c) => (
               <div key={`${c.objectId}-${c.at}`} className="rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium capitalize">{c.label}</span>
+                  <span className="font-medium">
+                    {c.identity?.name ?? <span className="capitalize">{c.label}</span>}
+                    {c.identity?.name !== undefined && c.identity.name !== null && (
+                      <span className="ml-1 font-normal text-muted-foreground">({c.label})</span>
+                    )}
+                  </span>
                   {c.rejectedReason === undefined ? (
                     <Badge variant={c.confidence >= 0.95 ? "success" : "warning"}>
                       {(c.confidence * 100).toFixed(1)}%
@@ -176,10 +181,26 @@ export default function CamerasPage() {
                   ) : (
                     <Badge variant="danger">refused by guardrails</Badge>
                   )}
+                  {c.identity !== undefined &&
+                    (c.identity.isNew ? (
+                      <Badge variant="outline">first sighting</Badge>
+                    ) : (
+                      <Badge variant="success">
+                        seen {c.identity.sightings}×
+                        {c.identity.score !== undefined
+                          ? ` · ${(c.identity.score * 100).toFixed(0)}% identity`
+                          : ""}
+                      </Badge>
+                    ))}
                   <span className="font-mono text-xs text-muted-foreground">
                     {c.objectId.slice(0, 8)}
                   </span>
                 </div>
+                {c.identity?.matched !== undefined && c.identity.matched.length > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Recognized by: {c.identity.matched.join(", ").replaceAll("_", " ")}
+                  </p>
+                )}
                 {c.evidence.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {c.evidence.map((e) => (

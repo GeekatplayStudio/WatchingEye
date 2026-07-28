@@ -5,6 +5,7 @@
 //! in this Rust process — the frontend only renders what it is told.
 
 use crate::engine::{Engine, FrameOutcome};
+use crate::identify::{self, SharedRegistry};
 use axum::{
     extract::State,
     routing::{get, post},
@@ -39,11 +40,22 @@ struct Health {
 }
 
 /// Build the router.
-pub fn router(engine: SharedEngine) -> Router {
-    Router::new()
+///
+/// Frame processing and identity are separate sub-routers because they hold
+/// different state: per-camera pipeline state versus the identity registry.
+pub fn router(engine: SharedEngine, registry: SharedRegistry) -> Router {
+    let frames = Router::new()
         .route("/health", get(health))
         .route("/api/frame", post(ingest_frame))
-        .with_state(engine)
+        .with_state(engine);
+
+    let identities = Router::new()
+        .route("/api/identify", post(identify::identify))
+        .route("/api/identities", get(identify::list_identities))
+        .route("/api/identities/name", post(identify::name_identity))
+        .with_state(registry);
+
+    frames.merge(identities)
 }
 
 async fn health() -> Json<Health> {

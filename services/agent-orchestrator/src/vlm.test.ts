@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildPrompt, makeVlmAnalyzer, toDecisionJson, ALLOWED_CLASSES } from "./vlm.js";
+import {
+  buildPrompt,
+  makeVlmAnalyzer,
+  toDecisionJson,
+  ALLOWED_CLASSES,
+  PROMPT_VERSION,
+} from "./vlm.js";
 import { StubProvider } from "./llm.js";
 import type { TriggerEvent } from "./schema.js";
 
@@ -34,7 +40,7 @@ describe("toDecisionJson", () => {
       provenance: { model_version: string; prompt_version: string };
     };
     expect(out.provenance.model_version).toBe("qwen2.5vl:7b");
-    expect(out.provenance.prompt_version).toBe("classify-v1");
+    expect(out.provenance.prompt_version).toBe(PROMPT_VERSION);
     expect(out.evidence.map((e) => e.label)).toContain("class:person");
   });
 

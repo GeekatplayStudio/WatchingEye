@@ -329,6 +329,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "identity"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -811,6 +822,7 @@ dependencies = [
  "detector",
  "events",
  "guardrails",
+ "identity",
  "motion",
  "rules",
  "schemas",

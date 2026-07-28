@@ -9,6 +9,7 @@ members = [
     "crates/motion",
     "crates/detector",
     "crates/tracker",
+    "crates/identity",
     "services/vision-engine",
 ]
 

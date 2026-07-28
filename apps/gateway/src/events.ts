@@ -39,6 +39,15 @@ export interface DetectionEvent {
   risk?: number;
   /** Set when classification was attempted and refused by the guardrails. */
   rejectedReason?: string;
+  /** Who this is, when the identity registry recognised it. */
+  identity?: {
+    id: string;
+    name: string | null;
+    isNew: boolean;
+    sightings: number;
+    score?: number;
+    matched?: string[];
+  };
   /** Always "engine": events only originate from the real pipeline. */
   source: "engine";
 }

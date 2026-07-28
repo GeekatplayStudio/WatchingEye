@@ -11,7 +11,32 @@ import type { LlmProvider } from "./llm.js";
 import type { TriggerEvent } from "./schema.js";
 
 /** Prompt version — recorded in provenance on every decision. */
-export const PROMPT_VERSION = "classify-v1";
+export const PROMPT_VERSION = "classify-v2-identity";
+
+/**
+ * Attribute names the model may report, grouped by what they describe.
+ * A closed list matters: identity weighting is keyed on these names, so a
+ * model inventing `definitely_the_same_dog` must not be able to mint
+ * confidence. Unknown keys are accepted but weighted as near-worthless.
+ */
+export const DESCRIPTOR_KEYS = [
+  "license_plate",
+  "text_on_object",
+  "unique_marking",
+  "fur_color",
+  "coat_pattern",
+  "breed",
+  "clothing_color",
+  "upper_clothing",
+  "lower_clothing",
+  "hair_color",
+  "vehicle_make",
+  "vehicle_model",
+  "vehicle_color",
+  "carried_item",
+  "accessory",
+  "size",
+] as const;
 
 /** Classes the model is allowed to choose from. Anything else is rejected
  *  downstream, so the list is the contract, not a suggestion. */
@@ -34,7 +59,8 @@ export const ALLOWED_CLASSES = [
 export function buildPrompt(event: TriggerEvent): string {
   return [
     "You are a surveillance scene classifier. Look at the image and identify",
-    "the most prominent moving subject.",
+    "the most prominent moving subject, then describe the specific features",
+    "that would let someone recognise this same individual again later.",
     "",
     `The motion tracker already detected an object at region ${event.snapshotRef}`,
     `on camera "${event.cameraId}".`,
@@ -52,11 +78,23 @@ export function buildPrompt(event: TriggerEvent): string {
           { label: "blue_jacket", description: "Subject wearing a blue jacket" },
           { label: "walking_left", description: "Moving left across the frame" },
         ],
+        descriptors: [
+          { key: "upper_clothing", value: "blue_jacket" },
+          { key: "hair_color", value: "dark" },
+          { key: "carried_item", value: "backpack" },
+        ],
         proposed_action: "notify",
       },
       null,
       2,
     ),
+    "",
+    "The descriptors decide whether this is someone already known, so record",
+    "only what you can actually see. Prefer these keys:",
+    `  ${DESCRIPTOR_KEYS.join(", ")}`,
+    "Read any licence plate or visible text exactly — those settle identity",
+    "on their own. Omit a key entirely rather than guessing its value: a",
+    "missing attribute is harmless, a wrong one merges two individuals.",
     "",
     `Rules, all enforced after you reply:`,
     `- object_class must be one of ${JSON.stringify(ALLOWED_CLASSES)}.`,
@@ -76,7 +114,45 @@ interface RawClassification {
   confidence?: unknown;
   risk?: unknown;
   evidence?: unknown;
+  descriptors?: unknown;
   proposed_action?: unknown;
+}
+
+/** An identifying attribute extracted from a sighting. */
+export interface ObservedDescriptor {
+  key: string;
+  value: string;
+}
+
+/**
+ * Pull usable descriptors out of raw model output.
+ *
+ * Anything not shaped like `{key, value}` with non-empty strings is dropped
+ * rather than repaired — a malformed attribute is worse than a missing one,
+ * because it can merge two different individuals into one identity.
+ */
+export function extractDescriptors(raw: string): ObservedDescriptor[] {
+  let parsed: RawClassification;
+  try {
+    const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "");
+    parsed = JSON.parse(cleaned) as RawClassification;
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed.descriptors)) return [];
+  const seen = new Set<string>();
+  const out: ObservedDescriptor[] = [];
+  for (const item of parsed.descriptors) {
+    if (typeof item !== "object" || item === null) continue;
+    const { key, value } = item as { key?: unknown; value?: unknown };
+    if (typeof key !== "string" || typeof value !== "string") continue;
+    const k = key.trim().toLowerCase();
+    const v = value.trim().toLowerCase();
+    if (k === "" || v === "" || v === "unknown" || v === "n/a" || seen.has(k)) continue;
+    seen.add(k);
+    out.push({ key: k, value: v });
+  }
+  return out;
 }
 
 /**

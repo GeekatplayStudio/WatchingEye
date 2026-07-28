@@ -1,0 +1,18 @@
+[package]
+name = "identity"
+description = "Deterministic re-identification: who an object is, not just what it is"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

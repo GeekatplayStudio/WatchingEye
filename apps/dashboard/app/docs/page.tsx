@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, GitBranch, Eye, Mic, Boxes } from "lucide-react";
+import { ShieldCheck, GitBranch, Eye, Mic, Boxes, Fingerprint } from "lucide-react";
 
 const PAGES = [
   {
@@ -20,6 +20,12 @@ const PAGES = [
     icon: ShieldCheck,
     title: "Why the AI is never trusted",
     blurb: "The seven gates every model output must pass, and what each one catches.",
+  },
+  {
+    href: "/docs/identity",
+    icon: Fingerprint,
+    title: "Identity: who, not just what",
+    blurb: "How the system recognises the same individual again — and why a model never decides that.",
   },
   {
     href: "/docs/transparency",

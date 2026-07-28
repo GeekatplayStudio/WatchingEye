@@ -122,6 +122,19 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     if (result.rejectionReason !== undefined && result.rejectionReason !== "") {
       event.rejectedReason = result.rejectionReason;
     }
+    const id = result.identity;
+    if (id !== null && id !== undefined && id.identity_id !== "") {
+      event.identity = {
+        id: id.identity_id,
+        name: id.name,
+        isNew: id.is_new,
+        sightings: id.sightings,
+      };
+      if (id.evidence !== null) {
+        event.identity.score = id.evidence.score;
+        event.identity.matched = id.evidence.matched;
+      }
+    }
 
     await broadcast(event);
     return { outcome: result.outcome, event, latencyMs: result.latencyMs };

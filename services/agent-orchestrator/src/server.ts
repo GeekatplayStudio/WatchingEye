@@ -10,7 +10,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { buildAgentGraph } from "./graph.js";
 import { OllamaProvider, type LlmProvider } from "./llm.js";
-import { makeVlmAnalyzer } from "./vlm.js";
+import { extractDescriptors, makeVlmAnalyzer } from "./vlm.js";
+import { identify, type IdentificationOutcome } from "./identity.js";
 import { TriggerEventSchema } from "./schema.js";
 
 /** Request body for a classification. */
@@ -46,6 +47,7 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
       return {
         outcome: "safe_default",
         decision: null,
+        identity: null,
         rejectionReason: "no snapshot supplied; refusing to classify without an image",
         rawAnalysis: "",
         latencyMs: 0,
@@ -58,9 +60,26 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
     const started = Date.now();
     try {
       const result = await graph.invoke({ rawEvent: parsed.data });
+
+      // Identity is only attempted for decisions that survived the
+      // guardrails — there is no point asking "who is this" about output
+      // that was already refused.
+      let identity: IdentificationOutcome | null = null;
+      if (result.outcome === "action") {
+        const descriptors = extractDescriptors(result.rawAnalysis);
+        const decided = result.decision as { evidence?: Array<{ label: string }> } | null;
+        const claimed = decided?.evidence
+          ?.find((e) => e.label.startsWith("class:"))
+          ?.label.slice("class:".length);
+        if (descriptors.length > 0 && claimed !== undefined) {
+          identity = await identify(claimed, descriptors, parsed.data.cameraId);
+        }
+      }
+
       return {
         outcome: result.outcome,
         decision: result.decision,
+        identity,
         rejectionReason: result.rejectionReason,
         rawAnalysis: result.rawAnalysis,
         latencyMs: Date.now() - started,
@@ -71,6 +90,7 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
       return {
         outcome: "safe_default",
         decision: null,
+        identity: null,
         rejectionReason: err instanceof Error ? err.message : "classification failed",
         rawAnalysis: "",
         latencyMs: Date.now() - started,

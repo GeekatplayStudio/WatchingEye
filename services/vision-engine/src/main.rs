@@ -8,6 +8,7 @@
 
 mod api;
 mod engine;
+mod identify;
 mod pipeline;
 
 use std::sync::{Arc, Mutex};
@@ -26,7 +27,8 @@ async fn main() {
         .unwrap_or(8090);
 
     let state = Arc::new(Mutex::new(engine::Engine::new()));
-    let app = api::router(state);
+    let registry = Arc::new(Mutex::new(identity::Registry::new()));
+    let app = api::router(state, registry);
 
     let addr = format!("0.0.0.0:{port}");
     let listener = match tokio::net::TcpListener::bind(&addr).await {

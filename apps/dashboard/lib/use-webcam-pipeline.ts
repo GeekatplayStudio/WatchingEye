@@ -41,6 +41,16 @@ export interface CameraDevice {
   label: string;
 }
 
+/** Who the registry says this is. */
+export interface IdentityInfo {
+  id: string;
+  name: string | null;
+  isNew: boolean;
+  sightings: number;
+  score?: number;
+  matched?: string[];
+}
+
 /** A classification the guardrails accepted (or explicitly refused). */
 export interface Classification {
   objectId: string;
@@ -51,6 +61,7 @@ export interface Classification {
   promptVersion?: string;
   rejectedReason?: string;
   latencyMs?: number;
+  identity?: IdentityInfo;
   at: string;
 }
 
@@ -257,6 +268,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
             model: string;
             promptVersion?: string;
             rejectedReason?: string;
+            identity?: IdentityInfo;
           };
           latencyMs?: number;
         };
@@ -272,6 +284,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
         if (body.event.rejectedReason !== undefined)
           entry.rejectedReason = body.event.rejectedReason;
         if (body.latencyMs !== undefined) entry.latencyMs = body.latencyMs;
+        if (body.event.identity !== undefined) entry.identity = body.event.identity;
         setState((s) => ({
           ...s,
           classifying: false,
