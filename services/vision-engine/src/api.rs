@@ -1,0 +1,121 @@
+//! HTTP API: the deterministic pipeline exposed to the dashboard.
+//!
+//! The browser captures webcam frames, downscales them to grayscale, and
+//! POSTs the raw samples here. All detection, tracking, and gating happens
+//! in this Rust process — the frontend only renders what it is told.
+
+use crate::engine::{Engine, FrameOutcome};
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Json, Router,
+};
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+
+/// One frame submitted by a camera client.
+#[derive(Debug, Deserialize)]
+pub struct FrameRequest {
+    /// Camera this frame came from.
+    pub camera_id: String,
+    /// Sample grid width.
+    pub width: u32,
+    /// Sample grid height.
+    pub height: u32,
+    /// Row-major grayscale samples, one byte each.
+    pub samples: Vec<u8>,
+}
+
+/// Engine state shared across requests.
+pub type SharedEngine = Arc<Mutex<Engine>>;
+
+/// Health/identity payload.
+#[derive(Debug, Serialize)]
+struct Health {
+    status: &'static str,
+    service: &'static str,
+    /// Names of the pipeline stages, in the only order they can execute.
+    stages: [&'static str; 6],
+}
+
+/// Build the router.
+pub fn router(engine: SharedEngine) -> Router {
+    Router::new()
+        .route("/health", get(health))
+        .route("/api/frame", post(ingest_frame))
+        .with_state(engine)
+}
+
+async fn health() -> Json<Health> {
+    Json(Health {
+        status: "ok",
+        service: "vision-engine",
+        stages: [
+            "frame_validator",
+            "motion_detection",
+            "blob_extraction",
+            "tracking",
+            "temporal_validation",
+            "trigger_gate",
+        ],
+    })
+}
+
+/// Ingest one frame and return everything the pipeline concluded about it.
+///
+/// A poisoned engine mutex is reported as a failed outcome rather than
+/// panicking the server — a stuck camera must not take the process down.
+async fn ingest_frame(
+    State(engine): State<SharedEngine>,
+    Json(req): Json<FrameRequest>,
+) -> Json<FrameOutcome> {
+    let mut guard = match engine.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    Json(guard.process(&req))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
+    use super::*;
+    use crate::engine::Engine;
+
+    fn engine() -> SharedEngine {
+        Arc::new(Mutex::new(Engine::new()))
+    }
+
+    #[tokio::test]
+    async fn health_lists_the_pipeline_stages() {
+        let Json(h) = health().await;
+        assert_eq!(h.status, "ok");
+        assert_eq!(h.stages[0], "frame_validator");
+        assert_eq!(h.stages[5], "trigger_gate");
+    }
+
+    #[tokio::test]
+    async fn first_frame_reports_no_motion() {
+        let req = FrameRequest {
+            camera_id: "test".into(),
+            width: 4,
+            height: 4,
+            samples: vec![10; 16],
+        };
+        let Json(out) = ingest_frame(State(engine()), Json(req)).await;
+        assert!(!out.motion);
+        assert!(out.regions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_mismatched_sample_count_is_rejected() {
+        let req = FrameRequest {
+            camera_id: "test".into(),
+            width: 4,
+            height: 4,
+            samples: vec![10; 5],
+        };
+        let Json(out) = ingest_frame(State(engine()), Json(req)).await;
+        assert!(out.rejected_reason.is_some());
+    }
+}

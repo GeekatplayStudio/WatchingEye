@@ -11,9 +11,12 @@ events = { path = "../../crates/events" }
 rules = { path = "../../crates/rules" }
 guardrails = { path = "../../crates/guardrails" }
 camera = { path = "../../crates/camera" }
+motion = { path = "../../crates/motion" }
 detector = { path = "../../crates/detector" }
 tracker = { path = "../../crates/tracker" }
-tokio.workspace = true
+axum = "0.8"
+serde.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde_json.workspace = true

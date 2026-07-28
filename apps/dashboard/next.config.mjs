@@ -7,6 +7,10 @@ const nextConfig = {
         source: "/api/:path*",
         destination: `${process.env.GATEWAY_URL ?? "http://localhost:8080"}/api/:path*`,
       },
+      {
+        source: "/engine/:path*",
+        destination: `${process.env.ENGINE_URL ?? "http://localhost:8090"}/:path*`,
+      },
     ];
   },
 };

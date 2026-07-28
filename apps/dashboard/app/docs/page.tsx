@@ -1,0 +1,110 @@
+/**
+ * Docs index — the zero-black-box explanation of how the system decides.
+ * Written for an operator, not a developer: every claim here corresponds to
+ * code you can open, and each page names the file that implements it.
+ */
+import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ShieldCheck, GitBranch, Eye, Mic, Boxes } from "lucide-react";
+
+const PAGES = [
+  {
+    href: "/docs/pipeline",
+    icon: GitBranch,
+    title: "How a detection happens",
+    blurb: "Every stage between a camera frame and an alert, and what each one can reject.",
+  },
+  {
+    href: "/docs/guardrails",
+    icon: ShieldCheck,
+    title: "Why the AI is never trusted",
+    blurb: "The seven gates every model output must pass, and what each one catches.",
+  },
+  {
+    href: "/docs/transparency",
+    icon: Eye,
+    title: "What 'zero black box' means here",
+    blurb: "The record kept for every decision, and how to audit one after the fact.",
+  },
+  {
+    href: "/docs/voice",
+    icon: Mic,
+    title: "Voice: listening and answering",
+    blurb: "How spoken commands are parsed without letting a model decide what you meant.",
+  },
+  {
+    href: "/docs/setup",
+    icon: Boxes,
+    title: "Install and run",
+    blurb: "One-click setup, what gets installed, and how to start each part by hand.",
+  },
+];
+
+export default function DocsPage() {
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Documentation</h1>
+        <p className="mt-2 text-muted-foreground">
+          This system is built so that nothing about a decision is hidden from you. These pages
+          explain exactly how it reaches its conclusions — including what it cannot do.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>The one rule everything follows</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            <strong className="text-foreground">An AI model is never trusted.</strong> Model
+            output is treated as untrusted data — the same way a web form&apos;s contents are
+            treated. It is parsed, range-checked, screened, and policy-checked before anything
+            acts on it. If any check fails, the system does nothing and records why.
+          </p>
+          <p>
+            Nothing in the pipeline branches on what a model &ldquo;decided&rdquo;. Routing is
+            done by ordinary code reading validated fields.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {PAGES.map(({ href, icon: Icon, title, blurb }) => (
+          <Link key={href} href={href}>
+            <Card className="h-full transition-colors hover:border-primary/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 text-primary" />
+                  {title}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">{blurb}</CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Current honest status</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            <Badge variant="success">working</Badge> Motion detection, region extraction, object
+            tracking with stable identities, and the trigger gate — all running in Rust, live,
+            on your webcam via the <Link href="/cameras" className="text-primary">Cameras</Link>{" "}
+            page.
+          </p>
+          <p>
+            <Badge variant="warning">not yet wired</Badge> Object classification (person vs. dog
+            vs. car). The YOLO model is downloaded and the interface exists, but the inference
+            backend is not connected — so the system currently tracks{" "}
+            <em>things</em>, and does not yet name them. It will not pretend otherwise.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

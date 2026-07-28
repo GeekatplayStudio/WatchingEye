@@ -36,27 +36,31 @@ docs/
   architecture/    Diagrams and overviews
 ```
 
-## Getting Started
+## Getting Started — one click
 
-One-command setup (installs Rust if missing, installs Node deps, builds, tests):
+**Windows:** double-click `Start-WatchingEye.bat`
+**macOS / Linux:** `./start.sh`
+
+That single step installs anything missing (Rust, Node, Ollama, AI models),
+builds the Rust core, starts all three services, and opens the dashboard. It
+is safe to re-run — finished work is detected and skipped.
+
+Then open **[Cameras](http://localhost:3000/cameras)**, click *Scan for
+cameras*, and connect your webcam to watch the pipeline track live.
+
+<details>
+<summary>Running the pieces by hand</summary>
 
 ```bash
-# Windows
-.\scripts\install.ps1
-
-# Linux / macOS / Raspberry Pi
-./scripts/install.sh
+cargo run -p vision-engine        # detection core   :8090
+cd apps/gateway && npm run dev    # API gateway      :8080
+cd apps/dashboard && npm run dev  # dashboard        :3000
+docker compose up -d              # optional Postgres history
 ```
 
-Then start everything (engine + gateway :8080 + dashboard :5173):
-
-```bash
-# Windows
-.\scripts\run.ps1            # or: run.ps1 engine|gateway|dashboard|test
-
-# Linux / macOS
-./scripts/run.sh             # or: run.sh engine|gateway|dashboard|test
-```
+Setup only, without starting: `.\scripts\install.ps1` or `./scripts/install.sh`
+(add `-SkipModels` / `SKIP_MODELS=1` to skip the ~6 GB of AI models).
+</details>
 
 The installer also downloads all AI models (skip with `-SkipModels` /
 `SKIP_MODELS=1`, or run [scripts/install-models](scripts/install-models.sh)
@@ -68,6 +72,22 @@ separately later):
 | `llama3.2:3b` | Structured reasoning LLM | Ollama |
 | `yolo11n.onnx` | Real-time object detection | `models/vision/` |
 | `ggml-base.en.bin` | Whisper voice recognition | `models/voice/` |
+
+## What works today
+
+| Capability | Status |
+|---|---|
+| Webcam scan, connect, live capture | ✅ browser-native permission prompt |
+| Motion detection (background model, ghost-trail free) | ✅ Rust |
+| Region extraction + object tracking with stable IDs | ✅ Rust |
+| Trigger gate (opens once per object, not per frame) | ✅ Rust |
+| Per-frame reasoning trace shown in the UI | ✅ |
+| Guardrails: schema, range, evidence, policy, injection screening | ✅ Rust + zod |
+| Object **classification** (person/dog/car) | ⚠️ model downloaded, inference not yet wired |
+| Voice STT/TTS bindings | ⚠️ contracts + tests done, audio not attached |
+
+The dashboard never claims more than this — see the in-app
+[docs](http://localhost:3000/docs) for the same list with reasoning.
 
 ## Roadmap
 

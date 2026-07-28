@@ -8,6 +8,11 @@
 //! by comparing each pixel against the frame's mean shift rather than its raw
 //! value — see [`MotionDetector::evaluate`].
 
+pub mod background;
+pub mod blobs;
+
+pub use background::BackgroundModel;
+use blobs::MotionMask;
 use camera::Frame;
 use thiserror::Error;
 
@@ -125,6 +130,71 @@ impl MotionDetector {
             changed_ratio,
             frame: frame.number,
         })
+    }
+}
+
+impl MotionDetector {
+    /// Evaluate a frame and also return the per-sample change mask.
+    ///
+    /// Same semantics and state updates as [`MotionDetector::evaluate`]; the
+    /// mask feeds [`blobs::extract`] so motion becomes trackable regions.
+    /// The first frame returns an all-false mask.
+    ///
+    /// # Errors
+    /// Same conditions as [`MotionDetector::evaluate`].
+    pub fn evaluate_mask(
+        &mut self,
+        frame: &Frame,
+    ) -> Result<(MotionResult, MotionMask), MotionError> {
+        if frame.data.is_empty() {
+            return Err(MotionError::EmptyFrame(frame.number));
+        }
+        let empty_mask = || MotionMask {
+            width: frame.width,
+            height: frame.height,
+            changed: vec![false; frame.data.len()],
+        };
+        let Some(reference) = self.reference.take() else {
+            self.reference = Some(frame.data.clone());
+            let result = MotionResult {
+                motion: false,
+                changed_ratio: 0.0,
+                frame: frame.number,
+            };
+            return Ok((result, empty_mask()));
+        };
+        if reference.len() != frame.data.len() {
+            let err = MotionError::SizeMismatch {
+                expected: reference.len(),
+                actual: frame.data.len(),
+            };
+            self.reference = Some(frame.data.clone());
+            return Err(err);
+        }
+
+        let shift = mean_shift(&reference, &frame.data);
+        let threshold = f32::from(self.pixel_threshold);
+        let changed: Vec<bool> = reference
+            .iter()
+            .zip(&frame.data)
+            .map(|(&r, &c)| ((f32::from(c) - f32::from(r)) - shift).abs() > threshold)
+            .collect();
+        let count = changed.iter().filter(|c| **c).count();
+        #[allow(clippy::cast_precision_loss)]
+        let changed_ratio = count as f32 / reference.len() as f32;
+        self.reference = Some(frame.data.clone());
+
+        let result = MotionResult {
+            motion: changed_ratio >= self.ratio_threshold,
+            changed_ratio,
+            frame: frame.number,
+        };
+        let mask = MotionMask {
+            width: frame.width,
+            height: frame.height,
+            changed,
+        };
+        Ok((result, mask))
     }
 }
 

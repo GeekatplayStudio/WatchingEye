@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 camera = { path = "../camera" }
+schemas = { path = "../schemas" }
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -3,14 +3,16 @@
 /** Left navigation rail. */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Eye, Settings2, GitBranch, Mic } from "lucide-react";
+import { Activity, Eye, Settings2, GitBranch, Mic, Camera, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Live Monitor", icon: Activity },
+  { href: "/cameras", label: "Cameras", icon: Camera },
   { href: "/tuning", label: "Tuning", icon: Settings2 },
   { href: "/pipeline", label: "Pipeline", icon: GitBranch },
   { href: "/voice", label: "Voice", icon: Mic },
+  { href: "/docs", label: "Docs", icon: BookOpen },
 ];
 
 export function Sidebar() {
@@ -28,7 +30,8 @@ export function Sidebar() {
             href={href}
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-              pathname === href && "bg-muted text-foreground",
+              (href === "/" ? pathname === "/" : pathname.startsWith(href)) &&
+                "bg-muted text-foreground",
             )}
           >
             <Icon className="h-4 w-4" />
