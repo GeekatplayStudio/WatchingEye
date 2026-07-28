@@ -11,6 +11,7 @@ import { TrackOverlay } from "@/components/track-overlay";
 import { AiVisionPanel } from "@/components/ai-vision-panel";
 import { LiveTuning } from "@/components/live-tuning";
 import { ServoPanel } from "@/components/servo-panel";
+import { ClassFilter } from "@/components/class-filter";
 import {
   StatusChip,
   IconAction,
@@ -146,6 +147,11 @@ export default function ConsolePage() {
         </Card>
 
         <div className="flex flex-col gap-3">
+          <Card>
+            <CardContent className="p-3">
+              <ClassFilter />
+            </CardContent>
+          </Card>
           <Card>
             <CardContent className="p-3">
               <ServoPanel

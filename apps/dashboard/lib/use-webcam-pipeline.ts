@@ -25,7 +25,26 @@ export interface TrackedRegion {
   /** Samples per frame, used to extrapolate between engine updates. */
   vx: number;
   vy: number;
+  /** Direction and speed of travel. */
+  motion: {
+    heading: string;
+    speed: number;
+    angle_deg: number;
+  };
 }
+
+/** Arrow glyph for a heading reported by the engine. */
+export const HEADING_ARROWS: Record<string, string> = {
+  still: "•",
+  up: "↑",
+  up_right: "↗",
+  right: "→",
+  down_right: "↘",
+  down: "↓",
+  down_left: "↙",
+  left: "←",
+  up_left: "↖",
+};
 
 /** Where the head is aiming, in normalised coordinates. */
 export interface AimTarget {

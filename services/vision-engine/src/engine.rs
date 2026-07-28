@@ -12,6 +12,7 @@ use chrono::Utc;
 use motion::{blobs, BackgroundModel};
 use schemas::detection::BoundingBox;
 use serde::Serialize;
+use spatial::motion::{describe, MotionVector};
 use std::collections::HashMap;
 use tracker::association::associate;
 use uuid::Uuid;
@@ -37,6 +38,8 @@ pub struct TrackedRegion {
     pub vx: f32,
     /// Vertical movement per frame, in samples.
     pub vy: f32,
+    /// Direction and speed of travel, derived from the velocity above.
+    pub motion: MotionVector,
 }
 
 /// Everything the pipeline concluded about one frame.
@@ -236,7 +239,7 @@ impl Engine {
         let regions = blobs::extract(&mask, config.min_region_area);
         trace.push(format!("blob_extraction: {} region(s)", regions.len()));
 
-        let triggered = update_tracks(state, &regions, config);
+        let triggered = update_tracks(state, &regions, config, req.width, 1.0 / dt);
         trace.push(format!("tracking: {} active track(s)", state.tracks.len()));
         trace.push(format!(
             "trigger_gate: {} (needs {} consecutive frames)",
@@ -287,6 +290,8 @@ fn update_tracks(
     state: &mut CameraState,
     regions: &[BoundingBox],
     config: EngineConfig,
+    frame_width: u32,
+    fps: f32,
 ) -> Vec<Uuid> {
     let existing: Vec<BoundingBox> = state.tracks.iter().map(|t| t.bbox).collect();
     let matches = associate(regions, &existing, config.min_track_iou);
@@ -309,6 +314,7 @@ fn update_tracks(
         track.vx = (region.x + region.width / 2.0) - (track.bbox.x + track.bbox.width / 2.0);
         track.vy = (region.y + region.height / 2.0) - (track.bbox.y + track.bbox.height / 2.0);
         track.bbox = *region;
+        track.motion = describe(track.vx, track.vy, frame_width, fps);
         track.seen_frames += 1;
         track.missed_frames = 0;
         if !track.gate_open && track.seen_frames >= config.gate_frames {
@@ -338,6 +344,7 @@ fn update_tracks(
                 gate_open: false,
                 vx: 0.0,
                 vy: 0.0,
+                motion: describe(0.0, 0.0, frame_width, fps),
             });
         }
     }
@@ -538,6 +545,39 @@ mod tests {
         });
         assert!(out.rejected_reason.is_some());
         assert!(!out.servo.tracking);
+    }
+
+    #[test]
+    fn a_subject_moving_right_is_reported_as_moving_right() {
+        use spatial::motion::Heading;
+        let mut e = Engine::new();
+        e.process(&req(vec![10; 400]));
+        let mut out = e.process(&req(frame_with_square(1, 5, 6)));
+        for step in 1..6 {
+            out = e.process(&req(frame_with_square(1 + step * 2, 5, 6)));
+        }
+        let headings: Vec<Heading> = out.regions.iter().map(|r| r.motion.heading).collect();
+        assert!(
+            headings.contains(&Heading::Right),
+            "expected rightward motion, got {headings:?}"
+        );
+    }
+
+    #[test]
+    fn a_stationary_subject_reports_no_direction() {
+        use spatial::motion::Heading;
+        let mut e = Engine::new();
+        e.process(&req(vec![10; 400]));
+        let mut out = e.process(&req(frame_with_square(5, 5, 6)));
+        for _ in 0..4 {
+            out = e.process(&req(frame_with_square(5, 5, 6)));
+        }
+        assert!(
+            out.regions
+                .iter()
+                .all(|r| r.motion.heading == Heading::Still),
+            "a subject holding position must not report a direction"
+        );
     }
 
     #[test]

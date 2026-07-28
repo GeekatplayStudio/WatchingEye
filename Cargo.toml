@@ -11,6 +11,7 @@ members = [
     "crates/tracker",
     "crates/identity",
     "crates/actuator",
+    "crates/spatial",
     "services/vision-engine",
 ]
 

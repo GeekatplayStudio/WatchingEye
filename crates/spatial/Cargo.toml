@@ -1,0 +1,12 @@
+[package]
+name = "spatial"
+description = "Motion heading and monocular distance estimation from tracked regions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[lints]
+workspace = true

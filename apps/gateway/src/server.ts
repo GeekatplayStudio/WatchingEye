@@ -138,6 +138,9 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     if (result.rejectionReason !== undefined && result.rejectionReason !== "") {
       event.rejectedReason = result.rejectionReason;
     }
+    if (!settings.trackedClasses.includes(event.class)) {
+      event.filtered = true;
+    }
     if (result.descriptors !== undefined && result.descriptors.length > 0) {
       event.descriptors = result.descriptors;
     }

@@ -11,7 +11,7 @@
  * between confirmations, and never invents or removes a box.
  */
 import { useEffect, useRef, useState } from "react";
-import type { AimTarget, TrackedRegion } from "@/lib/use-webcam-pipeline";
+import { HEADING_ARROWS, type AimTarget, type TrackedRegion } from "@/lib/use-webcam-pipeline";
 
 interface Props {
   regions: TrackedRegion[];
@@ -81,6 +81,12 @@ export function TrackOverlay({ regions, target, targetId, gridWidth, gridHeight 
               style={{ backgroundColor: color, color: "hsl(var(--background))" }}
             >
               {isTarget ? "◎ TARGET" : r.gate_open ? "tracked" : `${r.seen_frames}`}
+              {r.motion !== undefined && r.motion.heading !== "still" && (
+                <>
+                  {" "}
+                  {HEADING_ARROWS[r.motion.heading] ?? ""} {r.motion.speed.toFixed(2)}/s
+                </>
+              )}
             </span>
           </div>
         );

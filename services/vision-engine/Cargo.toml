@@ -16,6 +16,7 @@ detector = { path = "../../crates/detector" }
 tracker = { path = "../../crates/tracker" }
 identity = { path = "../../crates/identity" }
 actuator = { path = "../../crates/actuator" }
+spatial = { path = "../../crates/spatial" }
 axum = "0.8"
 serde.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }

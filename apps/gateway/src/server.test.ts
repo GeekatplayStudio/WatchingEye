@@ -152,4 +152,71 @@ describe("settings validation", () => {
   it("throws on empty allowedActions", () => {
     expect(() => applyPatch(DEFAULT_SETTINGS, { allowedActions: [] })).toThrow(SettingsError);
   });
+
+  it("accepts a valid set of tracked classes", () => {
+    const next = applyPatch(DEFAULT_SETTINGS, { trackedClasses: ["person", "drone"] });
+    expect(next.trackedClasses).toEqual(["person", "drone"]);
+  });
+
+  it("allows watching nothing at all", () => {
+    expect(applyPatch(DEFAULT_SETTINGS, { trackedClasses: [] }).trackedClasses).toEqual([]);
+  });
+
+  it("rejects a class the system cannot detect", () => {
+    expect(() => applyPatch(DEFAULT_SETTINGS, { trackedClasses: ["dragon"] })).toThrow(
+      /unknown class/,
+    );
+  });
+});
+
+describe("class filtering", () => {
+  it("marks a sighting outside the tracked classes as filtered", async () => {
+    const app = await buildServer({ classifier: async () => decisionResult("bird") });
+    await app.inject({
+      method: "PUT",
+      url: "/api/settings",
+      payload: { trackedClasses: ["person"] },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/classify",
+      payload: { event: GATED_EVENT, image: "" },
+    });
+    expect(res.json().event.filtered).toBe(true);
+    await app.close();
+  });
+
+  it("does not mark a tracked class as filtered", async () => {
+    const app = await buildServer({ classifier: async () => decisionResult("person") });
+    await app.inject({
+      method: "PUT",
+      url: "/api/settings",
+      payload: { trackedClasses: ["person"] },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/classify",
+      payload: { event: GATED_EVENT, image: "" },
+    });
+    expect(res.json().event.filtered).toBeUndefined();
+    await app.close();
+  });
+
+  it("still records a filtered sighting rather than discarding it", async () => {
+    const app = await buildServer({ classifier: async () => decisionResult("bird") });
+    await app.inject({
+      method: "PUT",
+      url: "/api/settings",
+      payload: { trackedClasses: ["person"] },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/classify",
+      payload: { event: GATED_EVENT, image: "" },
+    });
+    const recent = await app.inject({ method: "GET", url: "/api/events/recent" });
+    expect(recent.json().events).toHaveLength(1);
+    expect(recent.json().events[0].filtered).toBe(true);
+    await app.close();
+  });
 });
