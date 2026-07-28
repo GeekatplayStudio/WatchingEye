@@ -1,0 +1,27 @@
+{
+  "name": "@watchingeye/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "API gateway between the Rust vision engine and the dashboard. No AI logic here.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "@fastify/websocket": "^11.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "@types/node": "^22.0.0"
+  }
+}

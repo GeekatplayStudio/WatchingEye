@@ -1,0 +1,16 @@
+[package]
+name = "rules"
+description = "Deterministic rule engine: declarative IF/AND/THEN rules over events"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+schemas = { path = "../schemas" }
+events = { path = "../events" }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+
+[lints]
+workspace = true

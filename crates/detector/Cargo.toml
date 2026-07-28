@@ -1,0 +1,15 @@
+[package]
+name = "detector"
+description = "Object detector abstraction: YOLO, Florence, etc. behind one trait"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+schemas = { path = "../schemas" }
+camera = { path = "../camera" }
+thiserror.workspace = true
+chrono.workspace = true
+
+[lints]
+workspace = true

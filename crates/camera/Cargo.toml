@@ -1,0 +1,14 @@
+[package]
+name = "camera"
+description = "Camera source abstraction: one trait, many backends (ESP32, RTSP, USB, file)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+
+[lints]
+workspace = true
