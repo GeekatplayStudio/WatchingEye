@@ -55,7 +55,16 @@ Then start everything (engine + gateway :8080 + dashboard :5173):
 ./scripts/run.sh             # or: run.sh engine|gateway|dashboard|test
 ```
 
-Ollama is optional until Phase 2 (local VLM): https://ollama.com
+The installer also downloads all AI models (skip with `-SkipModels` /
+`SKIP_MODELS=1`, or run [scripts/install-models](scripts/install-models.sh)
+separately later):
+
+| Model | Purpose | Where |
+|-------|---------|-------|
+| `qwen2.5vl:7b` | Vision-language scene analysis | Ollama |
+| `llama3.2:3b` | Structured reasoning LLM | Ollama |
+| `yolo11n.onnx` | Real-time object detection | `models/vision/` |
+| `ggml-base.en.bin` | Whisper voice recognition | `models/voice/` |
 
 ## Roadmap
 

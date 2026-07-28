@@ -5,9 +5,13 @@
     Installs Rust via rustup (winget) if missing, installs Node dependencies
     for the gateway and dashboard, and checks for optional tools (Ollama).
     Safe to re-run; every step is idempotent.
+.PARAMETER SkipModels
+    Skip downloading AI models (vision/voice); toolchain only.
 .EXAMPLE
     .\scripts\install.ps1
+    .\scripts\install.ps1 -SkipModels
 #>
+param([switch]$SkipModels)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
@@ -44,13 +48,12 @@ Push-Location "$root\apps\gateway"; npm install --no-audit --no-fund; Pop-Locati
 Write-Step "Installing dashboard dependencies"
 Push-Location "$root\apps\dashboard"; npm install --no-audit --no-fund; Pop-Location
 
-# --- Optional: Ollama (needed from Phase 2 on) ---
-Write-Step "Checking Ollama (optional, needed for Phase 2 VLM work)"
-$ollama = Get-Command ollama -ErrorAction SilentlyContinue
-if ($null -eq $ollama) {
-    Write-Host "Ollama not installed. Install later with: winget install Ollama.Ollama" -ForegroundColor Yellow
+# --- AI models (Ollama VLM/LLM, Whisper voice, YOLO ONNX) ---
+if ($SkipModels) {
+    Write-Step "Skipping AI model install (-SkipModels)"
 } else {
-    Write-Host "Found $(ollama --version)"
+    Write-Step "Installing AI models (vision + voice)"
+    & "$PSScriptRoot\install-models.ps1"
 }
 
 # --- Build & test ---

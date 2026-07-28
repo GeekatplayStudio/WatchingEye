@@ -43,13 +43,12 @@ step "Installing gateway dependencies"
 step "Installing dashboard dependencies"
 (cd "$ROOT/apps/dashboard" && npm install --no-audit --no-fund)
 
-step "Checking Ollama (optional, needed for Phase 2 VLM work)"
-if command -v ollama >/dev/null 2>&1; then
-    echo "Found $(ollama --version)"
-elif [ "$OS" = "Darwin" ]; then
-    echo "Ollama not installed. Install later with: brew install ollama"
+# --- AI models (Ollama VLM/LLM, Whisper voice, YOLO ONNX) ---
+if [ "${SKIP_MODELS:-0}" = "1" ]; then
+    step "Skipping AI model install (SKIP_MODELS=1)"
 else
-    echo "Ollama not installed. Install later from https://ollama.com"
+    step "Installing AI models (vision + voice)"
+    bash "$ROOT/scripts/install-models.sh"
 fi
 
 step "Building Rust workspace"

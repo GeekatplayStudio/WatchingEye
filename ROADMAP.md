@@ -18,7 +18,10 @@ is done (exceptions require an ADR).
 ### Step 0.2 — Toolchain & scripts
 - Exit criteria:
   - [ ] `scripts/install.ps1` / `scripts/install.sh` bring a clean machine to
-        a working build (Rust via rustup, Node deps, optional Ollama check)
+        a working build (Rust via rustup, Node deps)
+  - [ ] `scripts/install-models` provisions all AI models: Ollama +
+        qwen2.5vl:7b (VLM), llama3.2:3b (LLM), yolo11n.onnx (detection),
+        Whisper ggml-base.en (voice)
   - [ ] `scripts/run.ps1` / `scripts/run.sh` start engine, gateway, dashboard
   - [ ] `cargo test --workspace` green locally and in CI
   - [ ] `git init` + first commit + CI green on main
@@ -141,6 +144,9 @@ full evidence chain visible in the dashboard.
 ## Phase 5 — Advanced
 - Custom object training pipeline; validated natural-language querying;
   analytics/heatmaps; enterprise policy management; thermal cameras.
+- **Voice recognition**: Whisper (whisper-rs) audio pipeline — spoken-command
+  control of the dashboard and audio-event detection (glass break, shout),
+  routed through the same guardrail/rule pipeline as vision events.
 
 ---
 
