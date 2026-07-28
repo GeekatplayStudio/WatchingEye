@@ -44,6 +44,8 @@ export interface ClassifyResult {
   outcome: "action" | "safe_default";
   decision?: ValidatedDecision | null;
   identity?: IdentityOutcome | null;
+  /** Identifying attributes the model reported. */
+  descriptors?: Array<{ key: string; value: string }>;
   rejectionReason?: string;
   latencyMs?: number;
 }

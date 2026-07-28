@@ -65,8 +65,11 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
       // guardrails — there is no point asking "who is this" about output
       // that was already refused.
       let identity: IdentificationOutcome | null = null;
+      let descriptors = extractDescriptors(result.rawAnalysis);
+      if (result.outcome !== "action") {
+        descriptors = []; // refused output describes nothing we can rely on
+      }
       if (result.outcome === "action") {
-        const descriptors = extractDescriptors(result.rawAnalysis);
         const decided = result.decision as { evidence?: Array<{ label: string }> } | null;
         const claimed = decided?.evidence
           ?.find((e) => e.label.startsWith("class:"))
@@ -80,6 +83,7 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
         outcome: result.outcome,
         decision: result.decision,
         identity,
+        descriptors,
         rejectionReason: result.rejectionReason,
         rawAnalysis: result.rawAnalysis,
         latencyMs: Date.now() - started,

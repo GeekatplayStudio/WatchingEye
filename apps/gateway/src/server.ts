@@ -63,6 +63,22 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     timestamp: new Date().toISOString(),
   }));
 
+  app.get("/api/health", async () => ({ status: "ok", service: "gateway" }));
+
+  /** Relays the orchestrator's health so the UI can show one AI status icon. */
+  app.get("/api/ai/health", async (_req, reply) => {
+    try {
+      const res = await fetch(
+        `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/health`,
+        { signal: AbortSignal.timeout(3000) },
+      );
+      if (!res.ok) return reply.status(503).send({ status: "down" });
+      return await res.json();
+    } catch {
+      return reply.status(503).send({ status: "down" });
+    }
+  });
+
   app.get("/api/cameras", async () => ({ cameras: [...cameras.values()] }));
 
   app.get("/api/events/recent", async (req) => {
@@ -121,6 +137,9 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     }
     if (result.rejectionReason !== undefined && result.rejectionReason !== "") {
       event.rejectedReason = result.rejectionReason;
+    }
+    if (result.descriptors !== undefined && result.descriptors.length > 0) {
+      event.descriptors = result.descriptors;
     }
     const id = result.identity;
     if (id !== null && id !== undefined && id.identity_id !== "") {

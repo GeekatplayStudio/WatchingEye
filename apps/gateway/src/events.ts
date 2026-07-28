@@ -39,6 +39,8 @@ export interface DetectionEvent {
   risk?: number;
   /** Set when classification was attempted and refused by the guardrails. */
   rejectedReason?: string;
+  /** Identifying attributes the model reported for this sighting. */
+  descriptors?: Array<{ key: string; value: string }>;
   /** Who this is, when the identity registry recognised it. */
   identity?: {
     id: string;

@@ -62,6 +62,8 @@ export interface Classification {
   rejectedReason?: string;
   latencyMs?: number;
   identity?: IdentityInfo;
+  /** Identifying attributes the model reported. */
+  descriptors?: Array<{ key: string; value: string }>;
   at: string;
 }
 
@@ -269,6 +271,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
             promptVersion?: string;
             rejectedReason?: string;
             identity?: IdentityInfo;
+            descriptors?: Array<{ key: string; value: string }>;
           };
           latencyMs?: number;
         };
@@ -285,6 +288,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
           entry.rejectedReason = body.event.rejectedReason;
         if (body.latencyMs !== undefined) entry.latencyMs = body.latencyMs;
         if (body.event.identity !== undefined) entry.identity = body.event.identity;
+        if (body.event.descriptors !== undefined) entry.descriptors = body.event.descriptors;
         setState((s) => ({
           ...s,
           classifying: false,

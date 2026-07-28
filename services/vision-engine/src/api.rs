@@ -4,6 +4,7 @@
 //! POSTs the raw samples here. All detection, tracking, and gating happens
 //! in this Rust process — the frontend only renders what it is told.
 
+use crate::config::EngineConfig;
 use crate::engine::{Engine, FrameOutcome};
 use crate::identify::{self, SharedRegistry};
 use axum::{
@@ -47,6 +48,7 @@ pub fn router(engine: SharedEngine, registry: SharedRegistry) -> Router {
     let frames = Router::new()
         .route("/health", get(health))
         .route("/api/frame", post(ingest_frame))
+        .route("/api/config", get(get_config).post(set_config))
         .with_state(engine);
 
     let identities = Router::new()
@@ -86,6 +88,28 @@ async fn ingest_frame(
         Err(poisoned) => poisoned.into_inner(),
     };
     Json(guard.process(&req))
+}
+
+/// Read the thresholds currently in force.
+async fn get_config(State(engine): State<SharedEngine>) -> Json<EngineConfig> {
+    let guard = match engine.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    Json(guard.config())
+}
+
+/// Apply new thresholds. Returns what was actually applied after clamping,
+/// so the caller's sliders can snap to the accepted value.
+async fn set_config(
+    State(engine): State<SharedEngine>,
+    Json(config): Json<EngineConfig>,
+) -> Json<EngineConfig> {
+    let mut guard = match engine.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    Json(guard.set_config(config))
 }
 
 #[cfg(test)]

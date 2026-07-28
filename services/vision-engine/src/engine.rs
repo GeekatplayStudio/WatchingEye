@@ -5,6 +5,7 @@
 //! consults a model; classification happens later, only for gated events.
 
 use crate::api::FrameRequest;
+use crate::config::EngineConfig;
 use camera::Frame;
 use chrono::Utc;
 use motion::{blobs, BackgroundModel};
@@ -14,14 +15,8 @@ use std::collections::HashMap;
 use tracker::association::associate;
 use uuid::Uuid;
 
-/// Minimum blob area (in samples) to be considered a region, not noise.
-const MIN_BLOB_AREA: usize = 12;
-/// `IoU` above which a region is considered the same object as a track.
-const MIN_TRACK_IOU: f32 = 0.15;
-/// Frames a track may go unseen before it is dropped.
-const MAX_MISSED_FRAMES: u32 = 8;
-/// Consecutive frames a track needs before the gate can open.
-const GATE_FRAMES: u32 = 3;
+// Thresholds live in `EngineConfig` so they can be tuned while watching the
+// effect; see `crate::config`.
 
 /// A region the pipeline is currently tracking.
 #[derive(Debug, Clone, Serialize)]
@@ -57,9 +52,6 @@ pub struct FrameOutcome {
     pub trace: Vec<String>,
 }
 
-/// Fraction of foreground samples above which the frame counts as "motion".
-const MOTION_RATIO: f32 = 0.004;
-
 /// Per-camera pipeline state.
 struct CameraState {
     background: BackgroundModel,
@@ -70,6 +62,7 @@ struct CameraState {
 /// The live engine. One instance holds state for every connected camera.
 pub struct Engine {
     cameras: HashMap<String, CameraState>,
+    config: EngineConfig,
 }
 
 impl Default for Engine {
@@ -79,12 +72,36 @@ impl Default for Engine {
 }
 
 impl Engine {
-    /// Create an engine with no cameras attached.
+    /// Create an engine with no cameras attached and default thresholds.
     #[must_use]
     pub fn new() -> Self {
         Self {
             cameras: HashMap::new(),
+            config: EngineConfig::default(),
         }
+    }
+
+    /// The thresholds currently in force.
+    #[must_use]
+    pub fn config(&self) -> EngineConfig {
+        self.config
+    }
+
+    /// Apply new thresholds, clamping them into safe ranges.
+    ///
+    /// Changing how the background is modelled invalidates what every camera
+    /// has learned, so those models are rebuilt; the scene is re-learned over
+    /// the next few frames rather than producing a burst of false regions.
+    pub fn set_config(&mut self, config: EngineConfig) -> EngineConfig {
+        let next = config.sanitized();
+        if self.config.requires_background_reset(next) {
+            for state in self.cameras.values_mut() {
+                state.background = BackgroundModel::new(next.background_alpha, next.sensitivity);
+                state.tracks.clear();
+            }
+        }
+        self.config = next;
+        next
     }
 
     /// Run one frame through every stage.
@@ -93,11 +110,12 @@ impl Engine {
     /// the frame validator is the first gate for a purpose.
     pub fn process(&mut self, req: &FrameRequest) -> FrameOutcome {
         let expected = (req.width as usize) * (req.height as usize);
+        let config = self.config;
         let state = self
             .cameras
             .entry(req.camera_id.clone())
             .or_insert_with(|| CameraState {
-                background: BackgroundModel::default(),
+                background: BackgroundModel::new(config.background_alpha, config.sensitivity),
                 tracks: Vec::new(),
                 frame: 0,
             });
@@ -147,25 +165,26 @@ impl Engine {
         let foreground = mask.changed.iter().filter(|c| **c).count();
         #[allow(clippy::cast_precision_loss)]
         let changed_ratio = foreground as f32 / mask.changed.len() as f32;
-        let motion = changed_ratio >= MOTION_RATIO;
+        let motion = changed_ratio >= config.motion_ratio;
         trace.push(format!(
             "motion_detection: {} ({:.2}% foreground vs background model)",
             if motion { "MOTION" } else { "static" },
             changed_ratio * 100.0
         ));
 
-        let regions = blobs::extract(&mask, MIN_BLOB_AREA);
+        let regions = blobs::extract(&mask, config.min_region_area);
         trace.push(format!("blob_extraction: {} region(s)", regions.len()));
 
-        let triggered = update_tracks(state, &regions);
+        let triggered = update_tracks(state, &regions, config);
         trace.push(format!("tracking: {} active track(s)", state.tracks.len()));
         trace.push(format!(
-            "trigger_gate: {} (needs {GATE_FRAMES} consecutive frames)",
+            "trigger_gate: {} (needs {} consecutive frames)",
             if triggered.is_empty() {
                 "closed"
             } else {
                 "OPEN"
-            }
+            },
+            config.gate_frames
         ));
 
         FrameOutcome {
@@ -181,9 +200,13 @@ impl Engine {
 }
 
 /// Associate regions to tracks, age unmatched tracks, and open gates.
-fn update_tracks(state: &mut CameraState, regions: &[BoundingBox]) -> Vec<Uuid> {
+fn update_tracks(
+    state: &mut CameraState,
+    regions: &[BoundingBox],
+    config: EngineConfig,
+) -> Vec<Uuid> {
     let existing: Vec<BoundingBox> = state.tracks.iter().map(|t| t.bbox).collect();
-    let matches = associate(regions, &existing, MIN_TRACK_IOU);
+    let matches = associate(regions, &existing, config.min_track_iou);
 
     let mut matched_regions = vec![false; regions.len()];
     let mut matched_tracks = vec![false; state.tracks.len()];
@@ -201,7 +224,7 @@ fn update_tracks(state: &mut CameraState, regions: &[BoundingBox]) -> Vec<Uuid> 
         track.bbox = *region;
         track.seen_frames += 1;
         track.missed_frames = 0;
-        if !track.gate_open && track.seen_frames >= GATE_FRAMES {
+        if !track.gate_open && track.seen_frames >= config.gate_frames {
             track.gate_open = true;
             triggered.push(track.id);
         }
@@ -216,7 +239,7 @@ fn update_tracks(state: &mut CameraState, regions: &[BoundingBox]) -> Vec<Uuid> 
     }
     state
         .tracks
-        .retain(|t| t.missed_frames <= MAX_MISSED_FRAMES);
+        .retain(|t| t.missed_frames <= config.max_missed_frames);
 
     for (i, region) in regions.iter().enumerate() {
         if !matched_regions[i] {
@@ -329,6 +352,49 @@ mod tests {
         assert!(out.trace.iter().any(|t| t.starts_with("frame_validator")));
         assert!(out.trace.iter().any(|t| t.starts_with("motion_detection")));
         assert!(out.trace.iter().any(|t| t.starts_with("trigger_gate")));
+    }
+
+    #[test]
+    fn raising_the_gate_threshold_delays_the_trigger() {
+        let mut e = Engine::new();
+        e.set_config(EngineConfig {
+            gate_frames: 5,
+            ..EngineConfig::default()
+        });
+        e.process(&req(vec![10; 400]));
+        let mut opened_at = None;
+        for step in 0..6 {
+            let out = e.process(&req(frame_with_square(step, 5, 6)));
+            if !out.triggered.is_empty() && opened_at.is_none() {
+                opened_at = Some(out.frame);
+            }
+        }
+        assert_eq!(opened_at, Some(6), "gate must wait the configured 5 frames");
+    }
+
+    #[test]
+    fn config_changes_are_clamped_and_reported() {
+        let mut e = Engine::new();
+        let applied = e.set_config(EngineConfig {
+            gate_frames: 0,
+            ..EngineConfig::default()
+        });
+        assert_eq!(applied.gate_frames, 1);
+        assert_eq!(e.config().gate_frames, 1);
+    }
+
+    #[test]
+    fn changing_sensitivity_relearns_the_scene() {
+        let mut e = Engine::new();
+        e.process(&req(vec![10; 400]));
+        e.process(&req(frame_with_square(0, 5, 6)));
+        e.set_config(EngineConfig {
+            sensitivity: 60.0,
+            ..EngineConfig::default()
+        });
+        // The model was rebuilt, so this frame only re-learns the background.
+        let out = e.process(&req(frame_with_square(0, 5, 6)));
+        assert!(out.regions.is_empty());
     }
 
     #[test]

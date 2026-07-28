@@ -7,6 +7,7 @@
 //! Listens on `:8090` (override with `ENGINE_PORT`).
 
 mod api;
+mod config;
 mod engine;
 mod identify;
 mod pipeline;
