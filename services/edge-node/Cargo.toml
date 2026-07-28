@@ -1,0 +1,24 @@
+[package]
+name = "edge-node"
+description = "Slim pipeline node for Raspberry Pi-class devices: detect, track, aim - nothing else"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+camera = { path = "../../crates/camera" }
+motion = { path = "../../crates/motion" }
+tracker = { path = "../../crates/tracker" }
+actuator = { path = "../../crates/actuator" }
+spatial = { path = "../../crates/spatial" }
+schemas = { path = "../../crates/schemas" }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# Synchronous, dependency-light HTTP. The edge node serves one camera and a
+# couple of clients; an async runtime would be most of the binary for none
+# of the benefit.
+tiny_http = "0.12"
+
+[lints]
+workspace = true

@@ -201,6 +201,28 @@ servos in response to what the cameras and microphones perceive.
       (30% down the tracked region), not a detected face
 - [ ] Measure and publish end-to-end latency budget
 
+### Step A.2b — Two-app split and extreme optimization ✅
+The system now builds as two applications from one workspace:
+- **Desktop hub** (`vision-engine` + orchestrator + gateway + dashboard):
+  full pipeline, identity, VLM, YOLO, UI.
+- **Edge node** (`services/edge-node`): the same deterministic chain for
+  Raspberry Pi-class devices — synchronous, one camera, no async runtime,
+  no UUID/RNG dependency, compiled-in thresholds. Wire-compatible frame API.
+
+Measured results (96×72 grid, desktop CPU):
+- [x] Pipeline hot path 25.0 → 13.2 µs/frame (1.9×) — flood fill no longer
+      allocates per pixel, blob scratch is reused per camera, and the sample
+      buffer moves instead of being cloned
+- [x] `vision-engine` binary 1.71 → 1.04 MB (fat LTO, single codegen unit,
+      stripped, panic=abort); 0.74 MB on the size-first `edge` profile
+- [x] `edge-node` binary: **309 KB** (edge profile), 4 tests, verified live:
+      tracks, gates once, reports heading, commands the servo
+- [ ] Pi cross-compile in CI (`aarch64-unknown-linux-gnu`) with size gate
+- [ ] ESP32: true `no_std` port of `motion`/`actuator` cores (the crates
+      still assume `std`; ESP32-S3 needs alloc-only slices and fixed-point
+      review). Until then the ESP32 tier remains capture/stream only, per
+      the original PRD.
+
 ### Step A.3 — Device transport (WiFi / Bluetooth)
 - [ ] `crates/transport`: one trait, backends for WebSocket/HTTP over WiFi,
       BLE, and serial

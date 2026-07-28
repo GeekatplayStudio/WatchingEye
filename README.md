@@ -81,6 +81,24 @@ separately later):
 | `yolo11n.onnx` | Real-time object detection | `models/vision/` |
 | `ggml-base.en.bin` | Whisper voice recognition | `models/voice/` |
 
+## Two applications, one workspace
+
+| App | Target | Contents | Binary |
+|---|---|---|---|
+| **Desktop hub** | PC / Mac / server | Full pipeline, YOLO, VLM, identity, dashboard | 1.04 MB engine + Node services |
+| **Edge node** | Raspberry Pi-class | Same deterministic chain, servo output, wire-compatible API | **309 KB**, no async runtime |
+
+```bash
+cargo build -p edge-node --profile edge          # size-first build
+# Raspberry Pi cross-compile:
+rustup target add aarch64-unknown-linux-gnu
+cargo build -p edge-node --profile edge --target aarch64-unknown-linux-gnu
+```
+
+Hot path: 13 µs/frame at 96×72 on desktop (~500 µs projected on a Pi Zero 2,
+leaving 30 fps with room to spare). ESP32 remains capture/stream only until
+the `no_std` port lands — see the roadmap, honestly marked.
+
 ## What works today
 
 | Capability | Status |

@@ -9,6 +9,7 @@ use crate::config::EngineConfig;
 use actuator::{Head, ServoCommand, Target};
 use camera::Frame;
 use chrono::Utc;
+use motion::blobs::BlobScratch;
 use motion::{blobs, BackgroundModel};
 use schemas::detection::BoundingBox;
 use serde::Serialize;
@@ -73,6 +74,9 @@ struct CameraState {
     tracks: Vec<TrackedRegion>,
     frame: u64,
     head: Head,
+    /// Flood-fill scratch, reused so blob extraction allocates nothing
+    /// per frame after the first.
+    scratch: BlobScratch,
 }
 
 /// Choose what the head should aim at.
@@ -172,9 +176,13 @@ impl Engine {
 
     /// Run one frame through every stage.
     ///
+    /// Takes the request by value so the sample buffer moves into the
+    /// pipeline instead of being cloned — one fewer full-frame copy per
+    /// frame per camera, which is what a Pi-class budget notices.
+    ///
     /// Invalid frames are rejected with a reason rather than processed —
     /// the frame validator is the first gate for a purpose.
-    pub fn process(&mut self, req: &FrameRequest) -> FrameOutcome {
+    pub fn process(&mut self, req: FrameRequest) -> FrameOutcome {
         let expected = (req.width as usize) * (req.height as usize);
         let config = self.config;
         // Frame interval reported by the client, clamped to something sane so
@@ -182,12 +190,13 @@ impl Engine {
         let dt = req.dt_secs.unwrap_or(0.1).clamp(0.005, 0.5);
         let state = self
             .cameras
-            .entry(req.camera_id.clone())
+            .entry(req.camera_id)
             .or_insert_with(|| CameraState {
                 background: BackgroundModel::new(config.background_alpha, config.sensitivity),
                 tracks: Vec::new(),
                 frame: 0,
                 head: Head::default(),
+                scratch: BlobScratch::default(),
             });
         state.frame += 1;
         let frame_no = state.frame;
@@ -210,7 +219,7 @@ impl Engine {
             number: frame_no,
             width: req.width,
             height: req.height,
-            data: req.samples.clone(),
+            data: req.samples,
             format: "gray8".into(),
             timestamp: Utc::now(),
         };
@@ -236,7 +245,7 @@ impl Engine {
             changed_ratio * 100.0
         ));
 
-        let regions = blobs::extract(&mask, config.min_region_area);
+        let regions = blobs::extract_into(&mask, config.min_region_area, &mut state.scratch);
         trace.push(format!("blob_extraction: {} region(s)", regions.len()));
 
         let triggered = update_tracks(state, &regions, config, req.width, 1.0 / dt);
@@ -384,7 +393,7 @@ mod tests {
     #[test]
     fn rejects_a_frame_whose_size_does_not_match() {
         let mut e = Engine::new();
-        let out = e.process(&FrameRequest {
+        let out = e.process(FrameRequest {
             camera_id: "cam".into(),
             width: 20,
             height: 20,
@@ -399,7 +408,7 @@ mod tests {
     fn static_scene_produces_no_tracks() {
         let mut e = Engine::new();
         for _ in 0..5 {
-            let out = e.process(&req(vec![10; 400]));
+            let out = e.process(req(vec![10; 400]));
             assert!(out.regions.is_empty());
         }
     }
@@ -407,11 +416,11 @@ mod tests {
     #[test]
     fn a_moving_object_is_tracked_and_gates_open() {
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400])); // learn the background
+        e.process(req(vec![10; 400])); // learn the background
         let mut opened = Vec::new();
         let mut ids = Vec::new();
         for step in 0..5 {
-            let out = e.process(&req(frame_with_square(step, 5, 6)));
+            let out = e.process(req(frame_with_square(step, 5, 6)));
             opened.extend(out.triggered);
             ids.extend(out.regions.iter().map(|r| r.id));
         }
@@ -429,10 +438,10 @@ mod tests {
     #[test]
     fn a_moving_object_keeps_one_identity_across_frames() {
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400]));
+        e.process(req(vec![10; 400]));
         let mut seen = std::collections::HashSet::new();
         for step in 0..5 {
-            for region in e.process(&req(frame_with_square(step, 5, 6))).regions {
+            for region in e.process(req(frame_with_square(step, 5, 6))).regions {
                 seen.insert(region.id);
             }
         }
@@ -446,7 +455,7 @@ mod tests {
     #[test]
     fn every_frame_carries_an_explanation_trace() {
         let mut e = Engine::new();
-        let out = e.process(&req(vec![10; 400]));
+        let out = e.process(req(vec![10; 400]));
         assert!(out.trace.iter().any(|t| t.starts_with("frame_validator")));
         assert!(out.trace.iter().any(|t| t.starts_with("motion_detection")));
         assert!(out.trace.iter().any(|t| t.starts_with("trigger_gate")));
@@ -459,10 +468,10 @@ mod tests {
             gate_frames: 5,
             ..EngineConfig::default()
         });
-        e.process(&req(vec![10; 400]));
+        e.process(req(vec![10; 400]));
         let mut opened_at = None;
         for step in 0..6 {
-            let out = e.process(&req(frame_with_square(step, 5, 6)));
+            let out = e.process(req(frame_with_square(step, 5, 6)));
             if !out.triggered.is_empty() && opened_at.is_none() {
                 opened_at = Some(out.frame);
             }
@@ -484,25 +493,25 @@ mod tests {
     #[test]
     fn changing_sensitivity_relearns_the_scene() {
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400]));
-        e.process(&req(frame_with_square(0, 5, 6)));
+        e.process(req(vec![10; 400]));
+        e.process(req(frame_with_square(0, 5, 6)));
         e.set_config(EngineConfig {
             sensitivity: 60.0,
             ..EngineConfig::default()
         });
         // The model was rebuilt, so this frame only re-learns the background.
-        let out = e.process(&req(frame_with_square(0, 5, 6)));
+        let out = e.process(req(frame_with_square(0, 5, 6)));
         assert!(out.regions.is_empty());
     }
 
     #[test]
     fn the_head_aims_at_a_tracked_subject() {
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400]));
+        e.process(req(vec![10; 400]));
         // Subject on the right of the frame.
-        let mut out = e.process(&req(frame_with_square(13, 5, 6)));
+        let mut out = e.process(req(frame_with_square(13, 5, 6)));
         for _ in 0..10 {
-            out = e.process(&req(frame_with_square(13, 5, 6)));
+            out = e.process(req(frame_with_square(13, 5, 6)));
         }
         let target = out
             .target
@@ -519,13 +528,13 @@ mod tests {
     #[test]
     fn the_head_returns_to_rest_when_nothing_is_there() {
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400]));
+        e.process(req(vec![10; 400]));
         for _ in 0..12 {
-            e.process(&req(frame_with_square(13, 5, 6)));
+            e.process(req(frame_with_square(13, 5, 6)));
         }
-        let mut out = e.process(&req(vec![10; 400]));
+        let mut out = e.process(req(vec![10; 400]));
         for _ in 0..60 {
-            out = e.process(&req(vec![10; 400]));
+            out = e.process(req(vec![10; 400]));
         }
         assert!(out.target.is_none());
         assert!(!out.servo.tracking);
@@ -536,7 +545,7 @@ mod tests {
     fn a_rejected_frame_still_commands_the_head_safely() {
         // A bad frame must not leave the servo loop without a command.
         let mut e = Engine::new();
-        let out = e.process(&FrameRequest {
+        let out = e.process(FrameRequest {
             camera_id: "cam".into(),
             width: 20,
             height: 20,
@@ -551,10 +560,10 @@ mod tests {
     fn a_subject_moving_right_is_reported_as_moving_right() {
         use spatial::motion::Heading;
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400]));
-        let mut out = e.process(&req(frame_with_square(1, 5, 6)));
+        e.process(req(vec![10; 400]));
+        let mut out = e.process(req(frame_with_square(1, 5, 6)));
         for step in 1..6 {
-            out = e.process(&req(frame_with_square(1 + step * 2, 5, 6)));
+            out = e.process(req(frame_with_square(1 + step * 2, 5, 6)));
         }
         let headings: Vec<Heading> = out.regions.iter().map(|r| r.motion.heading).collect();
         assert!(
@@ -567,10 +576,10 @@ mod tests {
     fn a_stationary_subject_reports_no_direction() {
         use spatial::motion::Heading;
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400]));
-        let mut out = e.process(&req(frame_with_square(5, 5, 6)));
+        e.process(req(vec![10; 400]));
+        let mut out = e.process(req(frame_with_square(5, 5, 6)));
         for _ in 0..4 {
-            out = e.process(&req(frame_with_square(5, 5, 6)));
+            out = e.process(req(frame_with_square(5, 5, 6)));
         }
         assert!(
             out.regions
@@ -583,10 +592,10 @@ mod tests {
     #[test]
     fn tracks_report_velocity_for_smooth_extrapolation() {
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400]));
-        let mut out = e.process(&req(frame_with_square(2, 5, 6)));
+        e.process(req(vec![10; 400]));
+        let mut out = e.process(req(frame_with_square(2, 5, 6)));
         for step in 1..5 {
-            out = e.process(&req(frame_with_square(2 + step * 2, 5, 6)));
+            out = e.process(req(frame_with_square(2 + step * 2, 5, 6)));
         }
         let moving = out.regions.iter().any(|r| r.vx.abs() > 0.0);
         assert!(moving, "a moving subject should report non-zero velocity");
@@ -595,7 +604,7 @@ mod tests {
     #[test]
     fn cameras_keep_independent_state() {
         let mut e = Engine::new();
-        e.process(&req(vec![10; 400]));
+        e.process(req(vec![10; 400]));
         let other = FrameRequest {
             camera_id: "other".into(),
             width: 20,
@@ -603,7 +612,7 @@ mod tests {
             samples: vec![10; 400],
             dt_secs: Some(0.1),
         };
-        let out = e.process(&other);
+        let out = e.process(other);
         assert_eq!(out.frame, 1, "a second camera starts its own frame count");
     }
 }

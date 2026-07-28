@@ -91,7 +91,7 @@ async fn ingest_frame(
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    Json(guard.process(&req))
+    Json(guard.process(req))
 }
 
 /// Read the thresholds currently in force.

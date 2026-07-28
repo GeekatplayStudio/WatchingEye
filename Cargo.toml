@@ -13,6 +13,7 @@ members = [
     "crates/actuator",
     "crates/spatial",
     "services/vision-engine",
+    "services/edge-node",
 ]
 
 [workspace.package]
@@ -38,3 +39,20 @@ expect_used = "warn"
 
 [workspace.lints.rust]
 missing_docs = "warn"
+
+# Desktop release: maximum speed. Fat LTO and a single codegen unit let the
+# optimizer see across crate boundaries (the pipeline is many small crates);
+# stripping symbols roughly halves the binary.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+# Edge/embedded: smallest possible binary for Raspberry Pi-class devices.
+# `z` trades some straight-line speed for size; the pipeline math is small
+# enough that the difference is measured, not felt.
+[profile.edge]
+inherits = "release"
+opt-level = "z"

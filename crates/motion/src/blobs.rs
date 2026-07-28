@@ -3,6 +3,11 @@
 //! This is what makes motion *trackable*. The mask says "these samples
 //! changed"; blobs group adjacent changed samples into boxes the tracker can
 //! follow frame to frame. Pure, allocation-bounded, no ML.
+//!
+//! This sits on the per-frame hot path for every camera, so the flood fill
+//! works directly on the mask slice with an explicit stack: no per-pixel
+//! allocation, no per-read bounds-check chain. The scratch buffers are the
+//! only allocations, and [`extract_into`] lets a caller reuse them.
 
 use schemas::detection::BoundingBox;
 
@@ -29,14 +34,17 @@ impl MotionMask {
     }
 }
 
+/// Reusable flood-fill scratch space, so a per-camera caller allocates once
+/// instead of twice per frame.
+#[derive(Debug, Default)]
+pub struct BlobScratch {
+    visited: Vec<bool>,
+    stack: Vec<u32>,
+}
+
 /// Extract bounding boxes of connected changed regions.
 ///
-/// Uses 8-connectivity flood fill with an explicit stack (no recursion, so
-/// a full-frame blob cannot overflow the stack). Regions smaller than
-/// `min_area` samples are discarded as noise.
-///
-/// Boxes are returned in raster order of their first-encountered sample,
-/// which makes the output deterministic for a given mask.
+/// Convenience wrapper over [`extract_into`] that allocates fresh scratch.
 ///
 /// # Example
 /// ```
@@ -47,69 +55,89 @@ impl MotionMask {
 /// assert_eq!(boxes[0].width, 2.0);
 /// ```
 #[must_use]
-// Sample coordinates are bounded by the frame dimensions (hundreds, not
-// millions), so the u32 -> f32 conversions below are always exact.
-#[allow(clippy::cast_precision_loss)]
 pub fn extract(mask: &MotionMask, min_area: usize) -> Vec<BoundingBox> {
-    let total = (mask.width as usize) * (mask.height as usize);
-    let mut visited = vec![false; total];
+    let mut scratch = BlobScratch::default();
+    extract_into(mask, min_area, &mut scratch)
+}
+
+/// Extract regions using caller-owned scratch buffers.
+///
+/// Uses 8-connectivity flood fill with an explicit stack (no recursion, so a
+/// full-frame blob cannot overflow). Regions smaller than `min_area` samples
+/// are discarded as noise. Output order is deterministic: raster order of
+/// each region's first-encountered sample.
+#[must_use]
+#[allow(clippy::cast_precision_loss)] // sample coords are far below 2^24
+pub fn extract_into(
+    mask: &MotionMask,
+    min_area: usize,
+    scratch: &mut BlobScratch,
+) -> Vec<BoundingBox> {
+    let width = mask.width as usize;
+    let height = mask.height as usize;
+    let total = width * height;
+    if total == 0 || mask.changed.len() != total {
+        return Vec::new();
+    }
+    let changed: &[bool] = &mask.changed;
+
+    scratch.visited.clear();
+    scratch.visited.resize(total, false);
+    scratch.stack.clear();
+    let visited = &mut scratch.visited;
+    let stack = &mut scratch.stack;
     let mut boxes = Vec::new();
-    let mut stack: Vec<(u32, u32)> = Vec::new();
 
-    for start_y in 0..mask.height {
-        for start_x in 0..mask.width {
-            let start_idx = (start_y as usize) * (mask.width as usize) + (start_x as usize);
-            if visited[start_idx] || !mask.at(start_x, start_y) {
-                continue;
-            }
-            let (mut min_x, mut max_x) = (start_x, start_x);
-            let (mut min_y, mut max_y) = (start_y, start_y);
-            let mut area = 0_usize;
+    for start in 0..total {
+        if visited[start] || !changed[start] {
+            continue;
+        }
+        let (mut min_x, mut max_x) = (start % width, start % width);
+        let (mut min_y, mut max_y) = (start / width, start / width);
+        let mut area = 0usize;
 
-            visited[start_idx] = true;
-            stack.push((start_x, start_y));
-            while let Some((x, y)) = stack.pop() {
-                area += 1;
-                min_x = min_x.min(x);
-                max_x = max_x.max(x);
-                min_y = min_y.min(y);
-                max_y = max_y.max(y);
+        visited[start] = true;
+        #[allow(clippy::cast_possible_truncation)] // total fits u32 by construction
+        stack.push(start as u32);
+        while let Some(idx) = stack.pop() {
+            let idx = idx as usize;
+            let x = idx % width;
+            let y = idx / width;
+            area += 1;
+            min_x = min_x.min(x);
+            max_x = max_x.max(x);
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
 
-                for (nx, ny) in neighbors(x, y, mask.width, mask.height) {
-                    let idx = (ny as usize) * (mask.width as usize) + (nx as usize);
-                    if !visited[idx] && mask.at(nx, ny) {
-                        visited[idx] = true;
-                        stack.push((nx, ny));
+            // Visit the 8-neighbourhood without allocating: row and column
+            // ranges are clamped once, then indices are plain arithmetic.
+            let y0 = y.saturating_sub(1);
+            let y1 = (y + 1).min(height - 1);
+            let x0 = x.saturating_sub(1);
+            let x1 = (x + 1).min(width - 1);
+            for ny in y0..=y1 {
+                let row = ny * width;
+                for nx in x0..=x1 {
+                    let n = row + nx;
+                    if !visited[n] && changed[n] {
+                        visited[n] = true;
+                        #[allow(clippy::cast_possible_truncation)]
+                        stack.push(n as u32);
                     }
                 }
             }
+        }
 
-            if area >= min_area {
-                boxes.push(BoundingBox {
-                    x: min_x as f32,
-                    y: min_y as f32,
-                    width: (max_x - min_x + 1) as f32,
-                    height: (max_y - min_y + 1) as f32,
-                });
-            }
+        if area >= min_area {
+            boxes.push(BoundingBox {
+                x: min_x as f32,
+                y: min_y as f32,
+                width: (max_x - min_x + 1) as f32,
+                height: (max_y - min_y + 1) as f32,
+            });
         }
     }
     boxes
-}
-
-/// The up-to-eight in-bounds neighbours of a sample.
-fn neighbors(x: u32, y: u32, width: u32, height: u32) -> Vec<(u32, u32)> {
-    let mut out = Vec::with_capacity(8);
-    let x0 = x.saturating_sub(1);
-    let y0 = y.saturating_sub(1);
-    for ny in y0..=(y + 1).min(height.saturating_sub(1)) {
-        for nx in x0..=(x + 1).min(width.saturating_sub(1)) {
-            if (nx, ny) != (x, y) {
-                out.push((nx, ny));
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -179,5 +207,26 @@ mod tests {
         let m = mask(2, 2, &[(0, 0)]);
         assert!(m.at(0, 0));
         assert!(!m.at(9, 9));
+    }
+
+    #[test]
+    fn a_malformed_mask_yields_nothing_rather_than_panicking() {
+        let m = MotionMask {
+            width: 4,
+            height: 4,
+            changed: vec![true; 3], // wrong length
+        };
+        assert!(extract(&m, 1).is_empty());
+    }
+
+    #[test]
+    fn reused_scratch_gives_identical_results() {
+        let m1 = mask(6, 6, &[(0, 0), (1, 0), (1, 1)]);
+        let m2 = mask(6, 6, &[(4, 4), (5, 4), (5, 5), (4, 5)]);
+        let mut scratch = BlobScratch::default();
+        let a1 = extract_into(&m1, 1, &mut scratch);
+        let a2 = extract_into(&m2, 1, &mut scratch);
+        assert_eq!(a1, extract(&m1, 1));
+        assert_eq!(a2, extract(&m2, 1));
     }
 }
