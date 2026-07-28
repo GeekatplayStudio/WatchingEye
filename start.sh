@@ -59,6 +59,8 @@ if [ "$ENGINE_OK" = "1" ]; then
     (cd "$ROOT" && cargo run -p vision-engine --release) & PIDS+=($!)
     ok "vision-engine :8090"
 fi
+(cd "$ROOT/services/agent-orchestrator" && npm run dev) & PIDS+=($!)
+ok "orchestrator :8085"
 (cd "$ROOT/apps/gateway" && npm run dev) & PIDS+=($!)
 ok "gateway :8080"
 (cd "$ROOT/apps/dashboard" && npm run dev) & PIDS+=($!)

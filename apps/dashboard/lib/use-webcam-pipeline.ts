@@ -41,6 +41,19 @@ export interface CameraDevice {
   label: string;
 }
 
+/** A classification the guardrails accepted (or explicitly refused). */
+export interface Classification {
+  objectId: string;
+  label: string;
+  confidence: number;
+  evidence: Array<{ label: string; description: string }>;
+  model: string;
+  promptVersion?: string;
+  rejectedReason?: string;
+  latencyMs?: number;
+  at: string;
+}
+
 interface PipelineState {
   devices: CameraDevice[];
   scanning: boolean;
@@ -48,6 +61,8 @@ interface PipelineState {
   error: string | null;
   outcome: FrameOutcome | null;
   fps: number;
+  classifications: Classification[];
+  classifying: boolean;
 }
 
 /**
@@ -65,11 +80,15 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
     error: null,
     outcome: null,
     fps: 0,
+    classifications: [],
+    classifying: false,
   });
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const snapshotRef = useRef<HTMLCanvasElement | null>(null);
   const runningRef = useRef(false);
   const framesRef = useRef<number[]>([]);
+  const classifiedRef = useRef<Set<string>>(new Set());
 
   const scan = useCallback(async () => {
     setState((s) => ({ ...s, scanning: true, error: null }));
@@ -171,6 +190,13 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
         const now = performance.now();
         framesRef.current = [...framesRef.current, now].filter((t) => now - t < 1000);
         setState((s) => ({ ...s, outcome, fps: framesRef.current.length, error: null }));
+
+        // The gate opened: this is the only moment a model is consulted.
+        for (const objectId of outcome.triggered) {
+          if (classifiedRef.current.has(objectId)) continue;
+          classifiedRef.current.add(objectId);
+          void classifyObject(objectId, outcome);
+        }
       } catch (err) {
         setState((s) => ({
           ...s,
@@ -184,6 +210,95 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
       await new Promise((r) => setTimeout(r, 80));
     }
   }, [videoRef]);
+
+  /** Capture a full-colour JPEG of the current frame for the vision model. */
+  const grabSnapshot = useCallback((): string => {
+    const video = videoRef.current;
+    if (video === null || video.videoWidth === 0) return "";
+    if (snapshotRef.current === null) snapshotRef.current = document.createElement("canvas");
+    const canvas = snapshotRef.current;
+    canvas.width = 640;
+    canvas.height = Math.round((640 * video.videoHeight) / video.videoWidth);
+    const ctx = canvas.getContext("2d");
+    if (ctx === null) return "";
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.8).split(",")[1] ?? "";
+  }, [videoRef]);
+
+  /**
+   * Send one gated object for classification. Failures surface as an
+   * explicit "unclassified" entry rather than being dropped.
+   */
+  const classifyObject = useCallback(
+    async (objectId: string, outcome: FrameOutcome) => {
+      setState((s) => ({ ...s, classifying: true }));
+      const image = grabSnapshot();
+      try {
+        const res = await fetch("/api/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: {
+              objectId,
+              class: "moving_region",
+              confidence: 0.98,
+              frames: [outcome.frame - 2, outcome.frame - 1, outcome.frame],
+              cameraId: "webcam",
+              snapshotRef: `frame-${outcome.frame}`,
+            },
+            image,
+          }),
+        });
+        const body = (await res.json()) as {
+          event: {
+            class: string;
+            confidence: number;
+            evidence: Array<{ label: string; description: string }>;
+            model: string;
+            promptVersion?: string;
+            rejectedReason?: string;
+          };
+          latencyMs?: number;
+        };
+        const entry: Classification = {
+          objectId,
+          label: body.event.class,
+          confidence: body.event.confidence,
+          evidence: body.event.evidence,
+          model: body.event.model,
+          at: new Date().toISOString(),
+        };
+        if (body.event.promptVersion !== undefined) entry.promptVersion = body.event.promptVersion;
+        if (body.event.rejectedReason !== undefined)
+          entry.rejectedReason = body.event.rejectedReason;
+        if (body.latencyMs !== undefined) entry.latencyMs = body.latencyMs;
+        setState((s) => ({
+          ...s,
+          classifying: false,
+          classifications: [entry, ...s.classifications].slice(0, 20),
+        }));
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          classifying: false,
+          classifications: [
+            {
+              objectId,
+              label: "unknown",
+              confidence: 0,
+              evidence: [],
+              model: "unclassified",
+              rejectedReason:
+                err instanceof Error ? `gateway unreachable: ${err.message}` : "gateway error",
+              at: new Date().toISOString(),
+            },
+            ...s.classifications,
+          ].slice(0, 20),
+        }));
+      }
+    },
+    [grabSnapshot],
+  );
 
   useEffect(() => () => disconnect(), [disconnect]);
 

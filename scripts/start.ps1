@@ -102,8 +102,16 @@ function Start-Service2($name, $dir, $command) {
 if ($engineBuilt) {
     Start-Service2 "vision-engine :8090" $root "`$env:Path='$cargoBin;$mingw;'+`$env:Path; cargo run -p vision-engine --release"
 }
+Start-Service2 "orchestrator :8085" (Join-Path $root "services\agent-orchestrator") "npm run dev"
 Start-Service2 "gateway :8080" (Join-Path $root "apps\gateway") "npm run dev"
 Start-Service2 "dashboard :3000" (Join-Path $root "apps\dashboard") "npm run dev"
+
+# The vision model must be resident for classification to be fast.
+if (Get-Command ollama -ErrorAction SilentlyContinue) {
+    Write-Ok "ollama present (classification enabled)"
+} else {
+    Write-Warn2 "ollama not found - tracking works, classification will be refused"
+}
 
 # --- Wait for the dashboard, then open it ---
 Write-Step "Waiting for the dashboard"

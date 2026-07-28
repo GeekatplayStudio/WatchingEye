@@ -12,7 +12,10 @@ export interface DetectionEvent {
   timestamp: string;
   evidence: Array<{ label: string; description: string }>;
   model: string;
-  source: "engine" | "demo";
+  promptVersion?: string;
+  risk?: number;
+  rejectedReason?: string;
+  source: "engine";
 }
 
 export interface Settings {
@@ -21,7 +24,6 @@ export interface Settings {
   gateConsecutiveFrames: number;
   policyMinConfidence: number;
   allowedActions: string[];
-  demoIntervalMs: number;
 }
 
 export interface Camera {

@@ -49,9 +49,10 @@ export default function SetupDocs() {
       <DocSection title="Running the parts by hand">
         Three processes make up the system. The launcher starts all of them; you can also run
         each on its own:
-        <Cmd>{`cargo run -p vision-engine        # detection core, port 8090
-cd apps/gateway && npm run dev    # API gateway, port 8080
-cd apps/dashboard && npm run dev  # this dashboard, port 3000`}</Cmd>
+        <Cmd>{`cargo run -p vision-engine                     # detection core, port 8090
+cd services/agent-orchestrator && npm run dev  # recognition,    port 8085
+cd apps/gateway && npm run dev                 # API gateway,    port 8080
+cd apps/dashboard && npm run dev               # this dashboard, port 3000`}</Cmd>
         The dashboard works without the engine — you simply will not get live camera tracking,
         and the Cameras page will tell you so rather than failing silently.
       </DocSection>

@@ -98,10 +98,20 @@ export default function DocsPage() {
             page.
           </p>
           <p>
-            <Badge variant="warning">not yet wired</Badge> Object classification (person vs. dog
-            vs. car). The YOLO model is downloaded and the interface exists, but the inference
-            backend is not connected — so the system currently tracks{" "}
-            <em>things</em>, and does not yet name them. It will not pretend otherwise.
+            <Badge variant="success">working</Badge> Object recognition. When the gate opens, the
+            snapshot goes to a vision model running locally through Ollama, and the answer must
+            pass every guardrail before it appears. Typical round trip is 5–11 seconds, which is
+            affordable precisely because it happens once per object rather than once per frame.
+          </p>
+          <p>
+            <Badge variant="warning">honest limit</Badge> Recognition refuses more often than it
+            answers, on purpose. A model that reports 80% certainty is below the floor and is
+            discarded rather than shown to you. If you see &ldquo;refused by guardrails&rdquo;,
+            the system is working — it means nothing trustworthy could be concluded.
+          </p>
+          <p>
+            <Badge variant="warning">not yet wired</Badge> Per-frame YOLO detection (the model is
+            downloaded but the inference backend is not connected) and the audio path for voice.
           </p>
         </CardContent>
       </Card>

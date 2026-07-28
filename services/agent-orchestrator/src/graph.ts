@@ -10,6 +10,7 @@
  */
 import { END, START, StateGraph, Annotation } from "@langchain/langgraph";
 import { AgentDecisionSchema, TriggerEventSchema, type TriggerEvent } from "./schema.js";
+import { screen, ScreenError, type Policy } from "./screen.js";
 
 /** VLM adapter: takes a validated trigger, returns raw (untrusted) output. */
 export type Analyzer = (event: TriggerEvent) => Promise<string>;
@@ -29,8 +30,12 @@ const AgentState = Annotation.Root({
 
 type State = typeof AgentState.State;
 
-/** Build the compiled Super Agent graph with an injected analyzer. */
-export function buildAgentGraph(analyze: Analyzer) {
+/**
+ * Build the compiled Super Agent graph with an injected analyzer.
+ *
+ * `policy` overrides the default confidence floor and action allowlist.
+ */
+export function buildAgentGraph(analyze: Analyzer, policy?: Policy) {
   const graph = new StateGraph(AgentState)
     .addNode("validate_input", (state: State) => {
       const parsed = TriggerEventSchema.safeParse(state.rawEvent);
@@ -56,7 +61,19 @@ export function buildAgentGraph(analyze: Analyzer) {
       if (!parsed.success) {
         return { outcome: "safe_default" as const, rejectionReason: parsed.error.message };
       }
-      return { decision: parsed.data };
+      // Schema shape is not enough: apply the policy and safety gates too.
+      try {
+        const screened = screen(parsed.data, state.event?.class ?? "", policy);
+        return { decision: screened };
+      } catch (err) {
+        return {
+          outcome: "safe_default" as const,
+          rejectionReason:
+            err instanceof ScreenError
+              ? `${err.gate}: ${err.message}`
+              : "screening failed",
+        };
+      }
     })
     .addNode("route_action", () => ({ outcome: "action" as const }))
     .addEdge(START, "validate_input")

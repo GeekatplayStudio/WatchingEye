@@ -22,6 +22,7 @@ export default function CamerasPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Cameras</h1>
         <div className="flex items-center gap-2">
+          {p.classifying && <Badge variant="warning">classifying…</Badge>}
           {p.connected && <Badge variant="success">{p.fps} fps analyzed</Badge>}
           <Button variant="outline" size="sm" onClick={() => void p.scan()} disabled={p.scanning}>
             <RefreshCw className="h-3.5 w-3.5" />
@@ -152,6 +153,56 @@ export default function CamerasPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recognized objects</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {p.classifications.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing recognized yet. A vision model is consulted only when the trigger gate
+              opens on a tracked object — never per frame.
+            </p>
+          ) : (
+            p.classifications.map((c) => (
+              <div key={`${c.objectId}-${c.at}`} className="rounded-lg border border-border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium capitalize">{c.label}</span>
+                  {c.rejectedReason === undefined ? (
+                    <Badge variant={c.confidence >= 0.95 ? "success" : "warning"}>
+                      {(c.confidence * 100).toFixed(1)}%
+                    </Badge>
+                  ) : (
+                    <Badge variant="danger">refused by guardrails</Badge>
+                  )}
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {c.objectId.slice(0, 8)}
+                  </span>
+                </div>
+                {c.evidence.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {c.evidence.map((e) => (
+                      <Badge key={e.label} title={e.description}>
+                        {e.label.replaceAll("_", " ")}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {c.rejectedReason !== undefined && (
+                  <p className="mt-1 text-xs text-danger">{c.rejectedReason}</p>
+                )}
+                <p className="mt-1.5 font-mono text-xs text-muted-foreground">
+                  {c.model}
+                  {c.promptVersion !== undefined ? ` · ${c.promptVersion}` : ""}
+                  {c.latencyMs !== undefined ? ` · ${(c.latencyMs / 1000).toFixed(1)}s` : ""} ·{" "}
+                  {new Date(c.at).toLocaleTimeString()}
+                </p>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

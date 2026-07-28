@@ -16,8 +16,6 @@ export interface Settings {
   policyMinConfidence: number;
   /** Guardrails: allowed actions. */
   allowedActions: string[];
-  /** Demo event interval in ms (0 disables the demo generator). */
-  demoIntervalMs: number;
 }
 
 /** PRD defaults. */
@@ -27,7 +25,6 @@ export const DEFAULT_SETTINGS: Settings = {
   gateConsecutiveFrames: 3,
   policyMinConfidence: 0.95,
   allowedActions: ["notify", "log_only"],
-  demoIntervalMs: 3000,
 };
 
 /** Validation error for a bad settings patch. */
@@ -46,7 +43,6 @@ export function applyPatch(current: Settings, patch: Partial<Settings>): Setting
   assertRange("gateMinConfidence", next.gateMinConfidence, 0, 1);
   assertRange("gateConsecutiveFrames", next.gateConsecutiveFrames, 1, 30);
   assertRange("policyMinConfidence", next.policyMinConfidence, 0, 1);
-  assertRange("demoIntervalMs", next.demoIntervalMs, 0, 60000);
   if (!Array.isArray(next.allowedActions) || next.allowedActions.length === 0) {
     throw new SettingsError("allowedActions must be a non-empty array");
   }

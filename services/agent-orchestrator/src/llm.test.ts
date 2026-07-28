@@ -23,7 +23,8 @@ describe("OllamaProvider", () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ response: "{}" }));
     const provider = new OllamaProvider("m", "http://x", 1000, fetchImpl as never);
     await provider.complete({ promptVersion: "v1", prompt: "p", jsonMode: true });
-    const body = JSON.parse((fetchImpl.mock.calls[0] as never[])[1]["body"] as string) as {
+    const call = fetchImpl.mock.calls[0] as unknown as [string, { body: string }];
+    const body = JSON.parse(call[1].body) as {
       options: { temperature: number };
       format: string;
     };

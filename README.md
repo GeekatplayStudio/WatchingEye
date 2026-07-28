@@ -82,9 +82,14 @@ separately later):
 | Region extraction + object tracking with stable IDs | ✅ Rust |
 | Trigger gate (opens once per object, not per frame) | ✅ Rust |
 | Per-frame reasoning trace shown in the UI | ✅ |
-| Guardrails: schema, range, evidence, policy, injection screening | ✅ Rust + zod |
-| Object **classification** (person/dog/car) | ⚠️ model downloaded, inference not yet wired |
+| Guardrails: schema, range, evidence, policy, injection screening | ✅ Rust + TS, both enforced |
+| Object **recognition** via local VLM on gated events | ✅ Ollama qwen2.5vl, 5–11 s per object |
+| Per-frame YOLO detection | ⚠️ model downloaded, inference backend not wired |
 | Voice STT/TTS bindings | ⚠️ contracts + tests done, audio not attached |
+
+There is **no demo or synthetic event source**. An empty feed means nothing
+happened. Recognition refuses more often than it answers by design: a model
+reporting 80% certainty is below the floor and is discarded, not shown.
 
 The dashboard never claims more than this — see the in-app
 [docs](http://localhost:3000/docs) for the same list with reasoning.

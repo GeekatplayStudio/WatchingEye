@@ -39,7 +39,9 @@ export function EventCard({ event }: { event: DetectionEvent }) {
             <Badge variant={confidenceVariant(event.confidence)}>
               {(event.confidence * 100).toFixed(1)}%
             </Badge>
-            {event.source === "demo" && <Badge variant="outline">demo</Badge>}
+            {event.rejectedReason !== undefined && (
+              <Badge variant="danger">refused by guardrails</Badge>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap gap-1.5">
             {event.evidence.map((e) => (

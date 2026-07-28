@@ -114,20 +114,6 @@ export default function TuningPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Demo Stream</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Slider
-            label="Demo event interval (0 = off)"
-            value={settings.demoIntervalMs}
-            min={0} max={10000} step={500}
-            format={(v) => (v === 0 ? "off" : `${v / 1000}s`)}
-            onChange={(v) => set({ demoIntervalMs: v })}
-          />
-        </CardContent>
-      </Card>
     </div>
   );
 }
