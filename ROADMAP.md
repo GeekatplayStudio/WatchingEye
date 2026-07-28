@@ -98,6 +98,16 @@ row + snapshot in SQLite; dashboard timeline shows it. No LLM yet.
   - [ ] "person AND garage AND after midnight → notify" works end-to-end
   - [ ] Rule evaluation is pure: property test for determinism
 
+### Step 2.0 — Dashboard & gateway foundation ✅ (pulled forward from 2.4)
+- [x] Next.js 15 + Tailwind 4 + shadcn-style dashboard: live monitor with
+      real-time WebSocket feed, evidence chips, camera grid, pipeline view
+- [x] Tuning page: gate/policy thresholds editable live (validated, broadcast)
+- [x] Gateway: WebSocket streaming, settings API, Postgres event store
+      (pgvector image via docker-compose) with in-memory fallback
+- [x] LangGraph Super Agent DAG (orchestration only): validate → analyze →
+      zod guardrail → action, safe-default fallback, 4 passing tests
+- [x] MCP server (read-only): list_cameras, recent_events, get_settings
+
 ### Step 2.4 — Zero-black-box dashboard
 - Decision inspector: evidence, confidence, frames, model+prompt versions,
   input snapshot, raw vs validated JSON diff. Live event feed via WebSocket.
@@ -141,12 +151,32 @@ full evidence chain visible in the dashboard.
   Kubernetes manifests; Temporal for long-running workflows; 100-camera
   load test (synthetic streams) with event latency < 300 ms p95.
 
+## Phase 4.5 — Voice Module (recognize + talk back)
+
+### Step V.1 — Speech recognition (Whisper)
+- Exit criteria:
+  - [ ] Local Whisper STT (whisper-rs, model from `scripts/install-models`)
+  - [ ] Spoken commands ("show the driveway", "arm night mode") parsed into
+        a structured `VoiceCommand` schema — free text never executes
+  - [ ] Commands pass the same guardrail pipeline as vision decisions
+  - [ ] Audio-event detection: glass break, shout, doorbell → rule engine
+
+### Step V.2 — Voice response (TTS talk-back)
+- Exit criteria:
+  - [ ] Local Piper TTS: spoken alerts ("person at the front door") and
+        command confirmations
+  - [ ] Every utterance is the rendering of a validated, logged decision
+        with provenance — never free-form LLM output
+  - [ ] Two-way loop: ask "who was at the door today?" → RAG over event
+        history → validated answer → spoken response
+  - [ ] Dashboard Voice page: live transcript, command history, TTS replay
+
 ## Phase 5 — Advanced
 - Custom object training pipeline; validated natural-language querying;
   analytics/heatmaps; enterprise policy management; thermal cameras.
-- **Voice recognition**: Whisper (whisper-rs) audio pipeline — spoken-command
-  control of the dashboard and audio-event detection (glass break, shout),
-  routed through the same guardrail/rule pipeline as vision events.
+- **RAG over event history**: pgvector embeddings of events/snapshots for
+  retrieval-grounded answers; retrieved context is quoted in evidence so
+  answers stay auditable.
 
 ---
 

@@ -1,0 +1,24 @@
+# Local infrastructure: Postgres with pgvector (event storage now,
+# RAG embeddings later). Start with: docker compose up -d
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: watchingeye-postgres
+    environment:
+      POSTGRES_USER: watchingeye
+      POSTGRES_PASSWORD: watchingeye_dev   # dev-only credential
+      POSTGRES_DB: watchingeye
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U watchingeye"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+# Gateway connects when DATABASE_URL is set, e.g.:
+#   DATABASE_URL=postgres://watchingeye:watchingeye_dev@localhost:5432/watchingeye

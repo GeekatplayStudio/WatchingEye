@@ -22,9 +22,12 @@ crates/            Rust workspace — the deterministic core
   tracker/         Object tracking, UUIDs, timelines, object memory
 services/
   vision-engine/   Rust binary: capture → detect → validate → track → agent → actions
+  agent-orchestrator/  LangGraph Super Agent DAG (TS) with zod guardrails
 apps/
-  gateway/         Node.js + TypeScript + Fastify API gateway (no AI logic)
-  dashboard/       React + Vite dashboard (timelines, agent reasoning, replay)
+  gateway/         Fastify gateway: WebSocket event stream, settings API, Postgres store
+  dashboard/       Next.js 15 + Tailwind + shadcn-style UI: live monitor, tuning, pipeline
+packages/
+  mcp-server/      Read-only MCP server (cameras, events, settings)
 edge/
   esp32/           no_std-oriented firmware skeleton (capture, compress, stream only)
 docs/
