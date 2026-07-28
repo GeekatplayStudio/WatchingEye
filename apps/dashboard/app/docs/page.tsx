@@ -116,8 +116,16 @@ export default function DocsPage() {
             the system is working — it means nothing trustworthy could be concluded.
           </p>
           <p>
-            <Badge variant="warning">not yet wired</Badge> Per-frame YOLO detection (the model is
-            downloaded but the inference backend is not connected) and the audio path for voice.
+            <Badge variant="success">working</Badge> Naming stationary objects. A YOLO detector
+            runs on the full snapshot every second or so, independent of motion — a parked car or
+            a seated person gets a label, a confidence, and a rough distance with its assumption
+            stated. Unchecked classes are dimmed, never hidden.
+          </p>
+          <p>
+            <Badge variant="warning">honest limit</Badge> The detector&apos;s vocabulary is COCO&apos;s
+            80 classes — it cannot name a drone (the VLM path can). Distance is estimated from
+            typical object sizes, not measured; a true depth map needs a depth model that is not
+            yet wired. The audio path for voice is also not yet attached.
           </p>
         </CardContent>
       </Card>

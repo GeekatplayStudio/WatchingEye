@@ -48,6 +48,7 @@ export const ALLOWED_CLASSES = [
   "car",
   "truck",
   "bicycle",
+  "drone",
   "package",
   "unknown",
 ] as const;

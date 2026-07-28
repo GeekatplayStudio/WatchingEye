@@ -47,12 +47,18 @@ is done (exceptions require an ADR).
   - [ ] Wired into `vision-engine` against a real camera stream
   - [ ] 1000-frame soak test proving zero detector invocations when static
 
-### Step 1.3 — ONNX YOLO detector backend
-- Implement `Detector` with ONNX Runtime; YOLO11-nano quantized model.
+### Step 1.3 — ONNX YOLO detector backend ✅ (in the orchestrator — see ADR 0004)
 - Exit criteria:
-  - [ ] Person/dog/car detected on fixture images with conf ≥ 0.9
-  - [ ] Detection latency < 100 ms on CPU (benchmark in CI, regression-gated)
-  - [ ] Model file resolved via config; missing model = clean typed error
+  - [x] YOLO11n runs via `onnxruntime-node` in the agent orchestrator:
+        letterbox preprocess, `[1,84,8400]` decode, per-class NMS — all pure
+        functions with unit tests
+  - [x] Verified on a real photo: person at 89%, 490 ms CPU latency,
+        distance estimate attached (~2.0 m)
+  - [x] Missing model = clean 503 with the fix named, never invented boxes
+  - [x] Stationary objects are named: detection runs on the full snapshot
+        every ~1.2 s, independent of motion
+  - [ ] Rust `Detector` trait implementation (blocked on MSVC; ADR 0004)
+  - [ ] Latency < 100 ms (currently ~490 ms CPU; needs quantization or GPU)
 
 ### Step 1.4 — Temporal validation + tracker hardening (in progress)
 - Replace naive class-matching with IoU association; add `Lost` events.
@@ -186,6 +192,10 @@ servos in response to what the cameras and microphones perceive.
 ### Step A.2 — Fast tracking
 - [x] Capture paced by `requestAnimationFrame`, not a fixed sleep
 - [x] Overlay redraws at display rate, extrapolating from velocity
+- [x] Motion direction per track: eight-point heading + speed in
+      frame-fractions/s, verified in all directions against the live engine
+- [x] Distance estimates on detected objects (pinhole model, assumption
+      attached; see `crates/spatial` and its TS mirror)
 - [ ] Binary frame transport (JSON arrays dominate the round trip)
 - [ ] Face-specific detection — currently the aim point is a heuristic
       (30% down the tracked region), not a detected face

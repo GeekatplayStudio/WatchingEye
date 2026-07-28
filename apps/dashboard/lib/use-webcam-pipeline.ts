@@ -107,6 +107,23 @@ export interface Classification {
   at: string;
 }
 
+/** One labelled object from the full-frame detector. */
+export interface DetectedObject {
+  class: string;
+  cocoLabel: string;
+  confidence: number;
+  /** Normalised (0..1) box on the original image. */
+  bbox: { x: number; y: number; width: number; height: number };
+  distance: {
+    metres: number;
+    minMetres: number;
+    maxMetres: number;
+    basis: string;
+  } | null;
+  /** True when this class is unchecked in the class filter. */
+  filtered?: boolean;
+}
+
 interface PipelineState {
   devices: CameraDevice[];
   scanning: boolean;
@@ -118,6 +135,12 @@ interface PipelineState {
   latencyMs: number;
   classifications: Classification[];
   classifying: boolean;
+  /** Latest full-frame detections (stationary objects included). */
+  detections: DetectedObject[];
+  /** Round-trip of the last detection pass, ms. */
+  detectLatencyMs: number;
+  /** Set when the detector cannot run (e.g. model missing). */
+  detectError: string | null;
 }
 
 /**
@@ -138,6 +161,9 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
     latencyMs: 0,
     classifications: [],
     classifying: false,
+    detections: [],
+    detectLatencyMs: 0,
+    detectError: null,
   });
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -373,6 +399,63 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
     },
     [grabSnapshot],
   );
+
+  /**
+   * Full-frame detection loop, independent of the motion pipeline. This is
+   * what names things that are not moving — a parked car never trips motion
+   * detection, but YOLO still sees it. Runs at a gentle cadence because a
+   * full pass costs ~0.5s of CPU.
+   */
+  useEffect(() => {
+    if (!state.connected) return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const pass = async () => {
+      const image = grabSnapshot();
+      if (image === "") {
+        timer = setTimeout(() => void pass(), 500);
+        return;
+      }
+      const started = performance.now();
+      try {
+        const res = await fetch("/api/detect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image }),
+        });
+        const body = (await res.json()) as {
+          objects?: DetectedObject[];
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setState((s) => ({ ...s, detectError: body.error ?? `detector ${res.status}` }));
+        } else {
+          setState((s) => ({
+            ...s,
+            detections: body.objects ?? [],
+            detectLatencyMs: Math.round(performance.now() - started),
+            detectError: null,
+          }));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setState((s) => ({
+            ...s,
+            detectError: err instanceof Error ? err.message : "detector unreachable",
+          }));
+        }
+      }
+      if (!cancelled) timer = setTimeout(() => void pass(), 1200);
+    };
+    void pass();
+
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [state.connected, grabSnapshot]);
 
   useEffect(() => () => disconnect(), [disconnect]);
 

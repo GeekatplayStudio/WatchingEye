@@ -12,6 +12,7 @@ import { buildAgentGraph } from "./graph.js";
 import { OllamaProvider, type LlmProvider } from "./llm.js";
 import { extractDescriptors, makeVlmAnalyzer } from "./vlm.js";
 import { identify, type IdentificationOutcome } from "./identity.js";
+import { detect, modelAvailable } from "./detect.js";
 import { TriggerEventSchema } from "./schema.js";
 
 /** Request body for a classification. */
@@ -31,7 +32,32 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
     service: "agent-orchestrator",
     model,
     provider: provider?.name ?? "ollama",
+    detector: modelAvailable() ? "yolo11n-onnx" : "unavailable",
   }));
+
+  /**
+   * Full-frame object detection, independent of motion. This is the path
+   * that names stationary things; a parked car never trips the motion
+   * pipeline, but it is still there and this still sees it.
+   */
+  app.post("/detect", async (req, reply) => {
+    const body = req.body as { image?: string };
+    if (typeof body?.image !== "string" || body.image === "") {
+      return reply.status(400).send({ error: "image (base64 JPEG) is required" });
+    }
+    const started = Date.now();
+    try {
+      const result = await detect(body.image);
+      return { ...result, latencyMs: Date.now() - started };
+    } catch (err) {
+      // Detection failing is a visible outcome, not a guess: the caller
+      // shows "detector unavailable", never invented boxes.
+      return reply.status(503).send({
+        error: err instanceof Error ? err.message : "detection failed",
+        latencyMs: Date.now() - started,
+      });
+    }
+  });
 
   app.post("/classify", async (req, reply) => {
     const body = req.body as ClassifyBody;

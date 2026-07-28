@@ -79,6 +79,38 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     }
   });
 
+  /**
+   * Relay full-frame detection to the orchestrator. The gateway adds the
+   * filtered flag per current settings but never alters the detections —
+   * unchecked classes are dimmed by the UI, not removed.
+   */
+  app.post("/api/detect", async (req, reply) => {
+    try {
+      const res = await fetch(
+        `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/detect`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(req.body),
+          signal: AbortSignal.timeout(20_000),
+        },
+      );
+      const body = (await res.json()) as {
+        objects?: Array<{ class: string; filtered?: boolean }>;
+      };
+      if (!res.ok) return reply.status(res.status).send(body);
+      for (const obj of body.objects ?? []) {
+        if (!settings.trackedClasses.includes(obj.class)) obj.filtered = true;
+      }
+      return body;
+    } catch (err) {
+      return reply.status(503).send({
+        error:
+          err instanceof Error ? `detector unreachable: ${err.message}` : "detector unreachable",
+      });
+    }
+  });
+
   app.get("/api/cameras", async () => ({ cameras: [...cameras.values()] }));
 
   app.get("/api/events/recent", async (req) => {

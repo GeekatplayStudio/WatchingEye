@@ -8,6 +8,7 @@
 import { useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { TrackOverlay } from "@/components/track-overlay";
+import { DetectionOverlay } from "@/components/detection-overlay";
 import { AiVisionPanel } from "@/components/ai-vision-panel";
 import { LiveTuning } from "@/components/live-tuning";
 import { ServoPanel } from "@/components/servo-panel";
@@ -47,6 +48,19 @@ export default function ConsolePage() {
               title="Frames analyzed per second, and engine round-trip latency"
             >
               {p.fps} fps · {p.latencyMs} ms
+            </span>
+          )}
+          {p.connected && p.detectError === null && p.detections.length >= 0 && (
+            <span
+              className="rounded-md border border-border px-2 py-1 font-mono text-xs text-muted-foreground"
+              title="Full-frame YOLO pass: objects currently identified, and its round trip"
+            >
+              {p.detections.length} obj · {p.detectLatencyMs} ms
+            </span>
+          )}
+          {p.detectError !== null && (
+            <span className="rounded-md border border-danger/40 px-2 py-1 text-xs text-danger">
+              detector: {p.detectError}
             </span>
           )}
         </div>
@@ -114,6 +128,7 @@ export default function ConsolePage() {
                 gridHeight={p.gridHeight}
               />
             )}
+            {p.connected && <DetectionOverlay objects={p.detections} />}
             {!p.connected && (
               <div className="flex aspect-video flex-col items-center justify-center gap-2">
                 <Camera className="h-8 w-8 text-muted-foreground" />
