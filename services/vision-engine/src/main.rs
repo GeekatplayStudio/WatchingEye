@@ -19,6 +19,7 @@ mod onvif_client;
 mod pinned;
 mod pipeline;
 mod reolink_client;
+mod scan_jobs;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

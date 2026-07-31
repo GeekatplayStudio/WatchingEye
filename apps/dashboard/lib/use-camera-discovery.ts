@@ -33,6 +33,16 @@ export interface OnvifProfile {
   name: string;
 }
 
+/** A scan in progress or complete. */
+export interface ScanJob {
+  id: string;
+  cidr: string;
+  state: "running" | "done" | "failed";
+  candidates: Candidate[];
+  error: string | null;
+  elapsed_ms: number;
+}
+
 /** What an authenticated ONVIF interrogation returned. */
 export interface OnvifInventory {
   device: {
@@ -74,6 +84,7 @@ export function useCameraDiscovery() {
   const [cidr, setCidr] = useState("");
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,9 +108,27 @@ export function useCameraDiscovery() {
     setScanning(true);
     setError(null);
     setCandidates(null);
+    setElapsedMs(0);
     try {
-      const res = await post<{ candidates: Candidate[] }>("/api/cameras/scan", { cidr });
-      setCandidates(res.candidates);
+      // Started as a job and polled, not awaited in one request: a sweep can
+      // outlast the dashboard proxy's 30s ceiling, and a scan that is merely
+      // slow would come back as an indistinguishable 500.
+      const { id } = await post<{ id: string }>("/api/cameras/scan/start", { cidr });
+
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 700));
+        const res = await fetch(`/engine/api/cameras/scan/${id}`);
+        if (!res.ok) throw new Error(`lost track of the scan (${res.status})`);
+        const job = (await res.json()) as ScanJob;
+        setElapsedMs(job.elapsed_ms);
+        if (job.state === "done") {
+          setCandidates(job.candidates);
+          return;
+        }
+        if (job.state === "failed") {
+          throw new Error(job.error ?? "scan failed");
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "scan failed");
     } finally {
@@ -123,6 +152,7 @@ export function useCameraDiscovery() {
     setCidr,
     candidates,
     scanning,
+    elapsedMs,
     error,
     scan,
     inventory,

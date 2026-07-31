@@ -12,8 +12,12 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
-/// How many connection attempts may be in flight at once.
-const CONCURRENCY: usize = 256;
+/// How many hosts are probed at once.
+///
+/// Each host opens one socket per entry in `CAMERA_PORTS` simultaneously, so
+/// the real ceiling is this times that — kept to a few hundred, which a
+/// consumer router's NAT table tolerates.
+const HOST_CONCURRENCY: usize = 64;
 
 /// How long to wait for a TCP handshake before calling the port closed.
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(400);
@@ -26,7 +30,7 @@ pub async fn sweep(cidr: &str) -> Result<Vec<Candidate>, DiscoveryError> {
     let hosts = discovery::expand_cidr(cidr)?;
     let mut found: Vec<Candidate> = Vec::new();
 
-    for window in hosts.chunks(CONCURRENCY) {
+    for window in hosts.chunks(HOST_CONCURRENCY) {
         let mut set = JoinSet::new();
         for host in window {
             let host = host.clone();
@@ -55,15 +59,35 @@ pub async fn sweep(cidr: &str) -> Result<Vec<Candidate>, DiscoveryError> {
 }
 
 /// Which of the camera ports accept a connection on one host.
+///
+/// All ports are tried at once. Probing them in sequence costs the timeout
+/// once per closed port, which on a quiet address is the whole list — the
+/// difference between a sweep measured in seconds and one in minutes.
 async fn open_ports(host: &str) -> Vec<u16> {
-    let mut open = Vec::new();
+    let mut set = JoinSet::new();
     for (port, _) in CAMERA_PORTS {
         let addr = format!("{host}:{port}");
-        if let Ok(Ok(stream)) = timeout(CONNECT_TIMEOUT, TcpStream::connect(&addr)).await {
-            drop(stream);
-            open.push(*port);
+        let port = *port;
+        set.spawn(async move {
+            match timeout(CONNECT_TIMEOUT, TcpStream::connect(&addr)).await {
+                Ok(Ok(stream)) => {
+                    drop(stream);
+                    Some(port)
+                }
+                _ => None,
+            }
+        });
+    }
+
+    let mut open = Vec::new();
+    while let Some(joined) = set.join_next().await {
+        if let Ok(Some(port)) = joined {
+            open.push(port);
         }
     }
+    // Completion order is arbitrary once concurrent; sort so a host's ports
+    // read the same way every scan.
+    open.sort_unstable();
     open
 }
 

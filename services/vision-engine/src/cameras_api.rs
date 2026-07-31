@@ -5,7 +5,6 @@
 //! because a scan that silently adopted every answering host would put
 //! unvetted sources into the decision path.
 
-use crate::netscan;
 use crate::reolink_client::ReolinkClient;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -15,10 +14,6 @@ use camera::discovery::{self, Candidate};
 use camera::reolink::{ReolinkHost, Stream};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
-use std::time::Duration;
-
-/// How long to listen for ONVIF replies.
-const ONVIF_WAIT: Duration = Duration::from_millis(1500);
 
 /// Request to sweep a subnet.
 #[derive(Debug, Deserialize)]
@@ -128,6 +123,7 @@ pub fn router() -> Router {
         .route("/api/cameras/onvif/inventory", post(onvif_inventory))
         .route("/api/cameras/reolink/probe", post(probe_reolink))
         .route("/api/cameras/reolink/snapshot", post(reolink_snapshot))
+        .merge(crate::scan_jobs::router())
 }
 
 /// Ask one host whether it speaks ONVIF. Needs no credentials.
@@ -197,26 +193,14 @@ fn fail(status: StatusCode, message: &str) -> Response {
 /// port is only a hint; a valid ONVIF reply is proof, and it is what turns a
 /// list of addresses into a list of cameras.
 async fn scan(Json(req): Json<ScanRequest>) -> Response {
-    let mut candidates = match netscan::discover(&req.cidr, ONVIF_WAIT).await {
-        Ok(c) => c,
-        Err(err) => return fail(StatusCode::BAD_REQUEST, &err.to_string()),
-    };
-
-    for candidate in &mut candidates {
-        if candidate.onvif_url.is_some() {
-            continue;
-        }
-        if let Some(service) = crate::onvif_client::confirm(&candidate.address).await {
-            candidate.onvif_url = Some(service.url);
-            "onvif-camera".clone_into(&mut candidate.hint);
-        }
+    match crate::scan_jobs::run(&req.cidr).await {
+        Ok(candidates) => Json(ScanResponse {
+            cidr: req.cidr,
+            candidates,
+        })
+        .into_response(),
+        Err(err) => fail(StatusCode::BAD_REQUEST, &err),
     }
-
-    Json(ScanResponse {
-        cidr: req.cidr,
-        candidates,
-    })
-    .into_response()
 }
 
 /// Log into a Reolink device and report the cameras behind it.

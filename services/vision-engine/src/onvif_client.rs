@@ -9,8 +9,14 @@
 use camera::onvif::{self, OnvifDevice, OnvifProfile, ONVIF_ENDPOINTS};
 use std::time::Duration;
 
-/// How long to wait for a device to answer a SOAP call.
+/// How long to wait for a device to answer an authenticated SOAP call.
 const TIMEOUT: Duration = Duration::from_secs(6);
+
+/// How long to wait when merely asking "do you speak ONVIF?".
+///
+/// Shorter than [`TIMEOUT`]: this runs against every candidate on a subnet,
+/// and a device that is going to answer does so quickly on a LAN.
+const PROBE_TIMEOUT: Duration = Duration::from_millis(2500);
 
 /// A confirmed ONVIF service.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -27,29 +33,50 @@ pub struct OnvifService {
 /// Tries the ports and paths consumer hardware actually uses. Returns the
 /// first endpoint that answers with a valid `GetSystemDateAndTimeResponse`.
 pub async fn confirm(host: &str) -> Option<OnvifService> {
-    let http = client()?;
+    let http = probe_client()?;
     let body = onvif::get_system_date_body();
-    for (port, path) in ONVIF_ENDPOINTS {
+
+    // Every endpoint is tried at once. In sequence, a host that speaks none
+    // of them costs the timeout five times over, and that is paid for every
+    // candidate on the subnet.
+    let mut set = tokio::task::JoinSet::new();
+    for (rank, (port, path)) in ONVIF_ENDPOINTS.iter().enumerate() {
         let url = format!("http://{host}:{port}{path}");
-        let Ok(res) = http
-            .post(&url)
-            .header("Content-Type", "application/soap+xml; charset=utf-8")
-            .body(body.clone())
-            .send()
-            .await
-        else {
-            continue;
-        };
-        let Ok(text) = res.text().await else { continue };
-        if !text.contains("GetSystemDateAndTimeResponse") {
-            continue;
-        }
-        return Some(OnvifService {
-            url,
-            device_time: device_time(&text),
+        let http = http.clone();
+        let body = body.clone();
+        set.spawn(async move {
+            let res = http
+                .post(&url)
+                .header("Content-Type", "application/soap+xml; charset=utf-8")
+                .body(body)
+                .send()
+                .await
+                .ok()?;
+            let text = res.text().await.ok()?;
+            if !text.contains("GetSystemDateAndTimeResponse") {
+                return None;
+            }
+            Some((
+                rank,
+                OnvifService {
+                    url,
+                    device_time: device_time(&text),
+                },
+            ))
         });
     }
-    None
+
+    // ONVIF_ENDPOINTS is ordered by likelihood, so when several answer, the
+    // most likely one wins rather than whichever raced home first.
+    let mut best: Option<(usize, OnvifService)> = None;
+    while let Some(joined) = set.join_next().await {
+        if let Ok(Some((rank, service))) = joined {
+            if best.as_ref().is_none_or(|(seen, _)| rank < *seen) {
+                best = Some((rank, service));
+            }
+        }
+    }
+    best.map(|(_, service)| service)
 }
 
 /// Assemble the device's reported UTC time into an ISO-8601 stamp.
@@ -154,9 +181,17 @@ async fn call(http: &reqwest::Client, url: &str, body: String) -> Result<String,
 }
 
 fn client() -> Option<reqwest::Client> {
+    build_client(TIMEOUT)
+}
+
+fn probe_client() -> Option<reqwest::Client> {
+    build_client(PROBE_TIMEOUT)
+}
+
+fn build_client(timeout: Duration) -> Option<reqwest::Client> {
     reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
-        .timeout(TIMEOUT)
+        .timeout(timeout)
         .build()
         .ok()
 }

@@ -84,9 +84,11 @@ export default function DiscoverPage() {
             </Button>
 
             <p className="font-mono text-[0.65rem] leading-relaxed text-muted-foreground">
-              {selected && selected.hosts > 0
-                ? `${selected.hosts} addresses · takes about a minute`
-                : "ranges wider than 4096 addresses are refused"}
+              {d.scanning
+                ? `sweeping… ${(d.elapsedMs / 1000).toFixed(1)}s`
+                : selected && selected.hosts > 0
+                  ? `${selected.hosts} addresses · usually under a minute`
+                  : "ranges wider than 4096 addresses are refused"}
             </p>
           </CardContent>
         </Card>
