@@ -56,24 +56,36 @@ export interface OnvifInventory {
   streams: Array<[string, string]>;
 }
 
+/** What the dashboard says when the engine is not answering at all. */
+export const ENGINE_DOWN =
+  "Vision engine unreachable — start it with Start-WatchingEye.bat, or: cargo run -p vision-engine --release";
+
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`/engine${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/engine${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(ENGINE_DOWN);
+  }
+
   const text = await res.text();
   if (!res.ok) {
-    // The engine reports a reason, not just a status; surface it verbatim so
-    // the operator sees "enable ONVIF" rather than "502".
-    let message = `engine ${res.status}`;
+    // The engine answers failures as JSON with a reason. The dev proxy, when
+    // it cannot reach the engine at all, answers a bare 500 of plain text —
+    // so an unparseable body means the engine is down, not that the request
+    // was bad. Reporting "engine 500" for that sends people to the wrong
+    // problem entirely.
     try {
       const parsed = JSON.parse(text) as { error?: string };
-      if (typeof parsed.error === "string") message = parsed.error;
-    } catch {
-      /* not JSON — keep the status */
+      if (typeof parsed.error === "string") throw new Error(parsed.error);
+    } catch (err) {
+      if (err instanceof Error && err.message !== "") throw err;
     }
-    throw new Error(message);
+    throw new Error(res.status >= 500 ? ENGINE_DOWN : `engine ${res.status}`);
   }
   return JSON.parse(text) as T;
 }
@@ -81,28 +93,38 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 /** State machine for the discovery panel. */
 export function useCameraDiscovery() {
   const [interfaces, setInterfaces] = useState<Interface[]>([]);
+  /** Whether the engine has been reached yet. Never left indefinite. */
+  const [probe, setProbe] = useState<"loading" | "ready" | "unreachable">("loading");
   const [cidr, setCidr] = useState("");
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [scanning, setScanning] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/engine/api/cameras/interfaces");
-        if (!res.ok) return;
-        const list = (await res.json()) as Interface[];
-        setInterfaces(list);
-        // Default to the first scannable network rather than guessing /24:
-        // the wrong mask silently misses most of the address space.
-        const usable = list.find((i) => i.hosts > 0);
-        if (usable) setCidr(usable.cidr);
-      } catch {
-        setError("Vision engine unreachable — start it with: cargo run -p vision-engine");
-      }
-    })();
+  const loadInterfaces = useCallback(async () => {
+    setProbe("loading");
+    setError(null);
+    try {
+      const res = await fetch("/engine/api/cameras/interfaces");
+      if (!res.ok) throw new Error(ENGINE_DOWN);
+      const list = (await res.json()) as Interface[];
+      setInterfaces(list);
+      // Default to the first scannable network rather than guessing /24:
+      // the wrong mask silently misses most of the address space.
+      const usable = list.find((i) => i.hosts > 0);
+      if (usable) setCidr(usable.cidr);
+      setProbe("ready");
+    } catch {
+      // Reaching a settled state matters: left on "loading", the panel reads
+      // as though it is still working when nothing is going to happen.
+      setProbe("unreachable");
+      setError(ENGINE_DOWN);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadInterfaces();
+  }, [loadInterfaces]);
 
   const scan = useCallback(async () => {
     setScanning(true);
@@ -148,6 +170,8 @@ export function useCameraDiscovery() {
 
   return {
     interfaces,
+    probe,
+    retry: loadInterfaces,
     cidr,
     setCidr,
     candidates,

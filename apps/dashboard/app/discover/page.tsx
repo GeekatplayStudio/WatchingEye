@@ -43,9 +43,11 @@ export default function DiscoverPage() {
           title="Scan"
           tag={selected ? selected.name : "subnet"}
           note={
-            d.interfaces.length > 0
+            d.probe === "ready"
               ? `${d.interfaces.length} network${d.interfaces.length === 1 ? "" : "s"} detected`
-              : "detecting…"
+              : d.probe === "unreachable"
+                ? "engine offline"
+                : "detecting…"
           }
         />
         <Card>
@@ -94,9 +96,14 @@ export default function DiscoverPage() {
         </Card>
 
         {d.error !== null && (
-          <p className="rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
-            {d.error}
-          </p>
+          <div className="flex flex-wrap items-center gap-3 rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
+            <span className="flex-1">{d.error}</span>
+            {d.probe === "unreachable" && (
+              <Button variant="outline" size="sm" onClick={() => void d.retry()}>
+                Retry
+              </Button>
+            )}
+          </div>
         )}
       </section>
 
