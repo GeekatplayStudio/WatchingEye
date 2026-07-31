@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NetworkCameraTest } from "@/components/network-camera-test";
 import type { Candidate, OnvifInventory } from "@/lib/use-camera-discovery";
 import { Copy, Check, KeyRound } from "lucide-react";
 
@@ -120,30 +121,38 @@ export function OnvifConnect({
               {result.profiles.map((p) => {
                 const stream = result.streams.find(([token]) => token === p.token);
                 return (
-                  <div key={p.token} className="flex flex-wrap items-center gap-2 px-3 py-2">
-                    <span className="min-w-28 text-sm font-medium">{p.name || p.token}</span>
-                    <Badge variant="outline">{p.token}</Badge>
-                    {stream ? (
-                      <>
-                        <code className="flex-1 truncate text-[0.7rem]">{stream[1]}</code>
-                        <button
-                          type="button"
-                          onClick={() => copy(stream[1])}
-                          title="Copy RTSP URL"
-                          className="inline-flex h-6 items-center gap-1 rounded-sm border border-border px-1.5 font-mono text-[0.6rem] uppercase text-muted-foreground hover:text-foreground"
-                        >
-                          {copied === stream[1] ? (
-                            <Check className="h-3 w-3 text-primary" />
-                          ) : (
-                            <Copy className="h-3 w-3" />
-                          )}
-                          {copied === stream[1] ? "copied" : "copy"}
-                        </button>
-                      </>
-                    ) : (
-                      <span className="font-mono text-[0.65rem] text-muted-foreground">
-                        no stream URL offered
-                      </span>
+                  <div key={p.token} className="flex flex-col gap-2 px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="min-w-28 text-sm font-medium">{p.name || p.token}</span>
+                      <Badge variant="outline">{p.token}</Badge>
+                      {stream ? (
+                        <>
+                          <code className="flex-1 truncate text-[0.7rem]">{stream[1]}</code>
+                          <button
+                            type="button"
+                            onClick={() => copy(stream[1])}
+                            title="Copy RTSP URL"
+                            className="inline-flex h-6 items-center gap-1 rounded-sm border border-border px-1.5 font-mono text-[0.6rem] uppercase text-muted-foreground hover:text-foreground"
+                          >
+                            {copied === stream[1] ? (
+                              <Check className="h-3 w-3 text-primary" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                            {copied === stream[1] ? "copied" : "copy"}
+                          </button>
+                        </>
+                      ) : (
+                        <span className="font-mono text-[0.65rem] text-muted-foreground">
+                          no stream URL offered
+                        </span>
+                      )}
+                    </div>
+                    {stream !== undefined && (
+                      <NetworkCameraTest
+                        streamUrl={stream[1]}
+                        suggestedId={`${candidate.address}-${p.token}`.toLowerCase()}
+                      />
                     )}
                   </div>
                 );

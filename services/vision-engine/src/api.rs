@@ -51,7 +51,11 @@ struct Health {
 ///
 /// Frame processing and identity are separate sub-routers because they hold
 /// different state: per-camera pipeline state versus the identity registry.
-pub fn router(engine: SharedEngine, registry: SharedRegistry) -> Router {
+/// `gateway_url` is where network cameras POST classify requests on a
+/// trigger — see [`crate::rtsp`].
+pub fn router(engine: SharedEngine, registry: SharedRegistry, gateway_url: String) -> Router {
+    let rtsp = crate::rtsp::router(engine.clone(), gateway_url);
+
     let frames = Router::new()
         .route("/health", get(health))
         .route("/api/frame", post(ingest_frame))
@@ -64,7 +68,10 @@ pub fn router(engine: SharedEngine, registry: SharedRegistry) -> Router {
         .route("/api/identities/name", post(identify::name_identity))
         .with_state(registry);
 
-    frames.merge(identities).merge(crate::cameras_api::router())
+    frames
+        .merge(identities)
+        .merge(crate::cameras_api::router())
+        .merge(rtsp)
 }
 
 async fn health() -> Json<Health> {

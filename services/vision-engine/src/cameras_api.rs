@@ -215,7 +215,7 @@ async fn onvif_inventory(Json(req): Json<OnvifInventoryRequest>) -> Response {
 }
 
 /// An error the operator can act on, rather than a bare status code.
-fn fail(status: StatusCode, message: &str) -> Response {
+pub(crate) fn fail(status: StatusCode, message: &str) -> Response {
     (status, Json(serde_json::json!({ "error": message }))).into_response()
 }
 
@@ -303,7 +303,7 @@ async fn reolink_snapshot(Json(req): Json<SnapshotRequest>) -> Response {
 }
 
 /// Standard base64, no line breaks.
-fn base64(bytes: &[u8]) -> String {
+pub(crate) fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {

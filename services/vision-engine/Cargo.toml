@@ -19,10 +19,10 @@ actuator = { path = "../../crates/actuator" }
 spatial = { path = "../../crates/spatial" }
 axum = "0.8"
 if-addrs = "0.13"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde.workspace = true
 thiserror.workspace = true
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "process", "io-util"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde_json.workspace = true

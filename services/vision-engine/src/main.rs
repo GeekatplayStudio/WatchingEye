@@ -19,6 +19,7 @@ mod onvif_client;
 mod pinned;
 mod pipeline;
 mod reolink_client;
+mod rtsp;
 mod scan_jobs;
 
 use std::path::PathBuf;
@@ -69,7 +70,9 @@ async fn main() {
 
     let state = Arc::new(Mutex::new(engine::Engine::new()));
     let registry = Arc::new(Mutex::new(identity::Registry::new()));
-    let app = api::router(state, registry);
+    let gateway_url =
+        std::env::var("GATEWAY_URL").unwrap_or_else(|_| "http://localhost:8080".to_owned());
+    let app = api::router(state, registry, gateway_url);
 
     info!(port = bound.port, "vision-engine listening");
     if let Err(err) = axum::serve(bound.listener, app).await {

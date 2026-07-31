@@ -10,10 +10,17 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Sample grid sent to the engine. Small on purpose — the engine works on
- *  luminance, and this keeps the round trip well under a frame budget. */
-const GRID_WIDTH = 96;
-const GRID_HEIGHT = 72;
+/**
+ * Sample grid sent to the engine. Small on purpose — the engine works on
+ * luminance, and this keeps the round trip well under a frame budget.
+ *
+ * Exported because `use-network-camera` needs the same numbers to size the
+ * canvas it renders the engine's polled grid samples into — the RTSP
+ * capture path decodes server-side at this exact resolution
+ * (`services/vision-engine/src/rtsp.rs`), so the two must agree.
+ */
+export const GRID_WIDTH = 96;
+export const GRID_HEIGHT = 72;
 
 /** A region the engine is tracking. */
 export interface TrackedRegion {
