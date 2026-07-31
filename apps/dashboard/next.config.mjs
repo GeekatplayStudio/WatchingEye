@@ -21,6 +21,17 @@ function engineUrl() {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  /*
+   * Keep production builds out of the dev server's build directory.
+   *
+   * `next build` and `next dev` both default to `.next`. Running a build
+   * while a dev server is live replaces the chunks that server has already
+   * loaded, and it then fails with "Cannot find module './NNN.js'" — a
+   * corrupted-looking error with no obvious cause. Release builds set
+   * NEXT_DIST_DIR so the two never share a directory.
+   */
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+
   async rewrites() {
     // Proxy REST calls to the gateway; WebSocket connects directly to :8080.
     return [

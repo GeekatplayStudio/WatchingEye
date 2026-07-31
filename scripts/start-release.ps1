@@ -46,7 +46,7 @@ $engineExe = Join-Path $root "target\release\vision-engine.exe"
 $artifacts = @(
     @{ Name = "gateway";      Path = Join-Path $root "apps\gateway\dist\index.js" },
     @{ Name = "orchestrator"; Path = Join-Path $root "services\agent-orchestrator\dist\index.js" },
-    @{ Name = "dashboard";    Path = Join-Path $root "apps\dashboard\.next" }
+    @{ Name = "dashboard";    Path = Join-Path $root "apps\dashboard\.next-prod" }
 )
 $missing = @()
 foreach ($a in $artifacts) {
@@ -71,7 +71,9 @@ if ($engineBuilt) {
 }
 Start-Service2 "orchestrator :8085" (Join-Path $root "services\agent-orchestrator") "npm start"
 Start-Service2 "gateway :8080" (Join-Path $root "apps\gateway") "npm start"
-Start-Service2 "dashboard :3000" (Join-Path $root "apps\dashboard") "npm start"
+# Must match the directory build.ps1 wrote to, or `next start` looks in
+# `.next` and reports a missing production build.
+Start-Service2 "dashboard :3000" (Join-Path $root "apps\dashboard") "`$env:NEXT_DIST_DIR='.next-prod'; npm start"
 
 Write-Step "Checking the vision model daemon"
 & (Join-Path $PSScriptRoot "ensure-ollama.ps1")

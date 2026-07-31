@@ -23,7 +23,7 @@ MISSING=()
 check() { if [ -e "$2" ]; then ok "$1 ready"; else MISSING+=("$1"); fi; }
 check gateway      "$ROOT/apps/gateway/dist/index.js"
 check orchestrator "$ROOT/services/agent-orchestrator/dist/index.js"
-check dashboard    "$ROOT/apps/dashboard/.next"
+check dashboard    "$ROOT/apps/dashboard/.next-prod"
 if [ "${#MISSING[@]}" -gt 0 ]; then
     warn "missing: ${MISSING[*]}"
     printf '\n\033[31mRun ./scripts/build.sh first (or re-run with BUILD=1).\033[0m\n'
@@ -50,7 +50,9 @@ fi
 ok "orchestrator :8085"
 (cd "$ROOT/apps/gateway" && npm start) & PIDS+=($!)
 ok "gateway :8080"
-(cd "$ROOT/apps/dashboard" && npm start) & PIDS+=($!)
+# Must match the directory build.sh wrote to, or `next start` looks in
+# `.next` and reports a missing production build.
+(cd "$ROOT/apps/dashboard" && NEXT_DIST_DIR=.next-prod npm start) & PIDS+=($!)
 ok "dashboard :3000"
 
 step "Waiting for the dashboard"

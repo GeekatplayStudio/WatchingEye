@@ -39,6 +39,10 @@ if [ "$SKIP_NODE" != "1" ]; then
         fi
     done
 
+    # The dashboard builds into .next-prod, never .next: overwriting the dev
+    # server's build directory while it is running breaks it with a
+    # "Cannot find module './NNN.js'" that looks like corruption.
+    export NEXT_DIST_DIR=".next-prod"
     for proj in services/agent-orchestrator apps/gateway apps/dashboard; do
         step "Building $proj"
         if (cd "$ROOT/$proj" && npm run build); then
@@ -59,5 +63,5 @@ printf '\n\033[32mBuild complete.\033[0m\n'
 echo "  engine        target/release/vision-engine"
 echo "  gateway       apps/gateway/dist"
 echo "  orchestrator  services/agent-orchestrator/dist"
-echo "  dashboard     apps/dashboard/.next"
+echo "  dashboard     apps/dashboard/.next-prod"
 printf '\nRun it with: ./scripts/start-release.sh\n'

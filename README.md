@@ -169,6 +169,16 @@ The build reports every failing component rather than stopping at the first,
 and the release launcher verifies artifacts exist instead of half-starting.
 `-SkipRust` / `-SkipNode` (or `SKIP_RUST=1` / `SKIP_NODE=1`) build one half.
 
+The dashboard builds into `.next-prod`, not `.next`. Both `next build` and
+`next dev` default to `.next`, so building while a dev server is running
+replaces the chunks it has already loaded and breaks it with `Cannot find
+module './NNN.js'`. Keeping them apart means a release build and a dev
+server can run at the same time. If you build by hand, do the same:
+
+```bash
+cd apps/dashboard && NEXT_DIST_DIR=.next-prod npx next build
+```
+
 ## Two applications, one workspace
 
 | App | Target | Contents | Binary |

@@ -12,3 +12,6 @@ models/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Production build output (kept separate from the dev server's .next)
+.next-prod/

@@ -61,6 +61,10 @@ if (-not $SkipNode) {
         }
     }
 
+    # The dashboard builds into .next-prod, never .next: overwriting the dev
+    # server's build directory while it is running breaks it with a
+    # "Cannot find module './NNN.js'" that looks like corruption.
+    $env:NEXT_DIST_DIR = ".next-prod"
     foreach ($proj in @("services\agent-orchestrator", "apps\gateway", "apps\dashboard")) {
         Write-Step "Building $proj"
         Push-Location (Join-Path $root $proj)
@@ -80,5 +84,5 @@ Write-Host "`nBuild complete." -ForegroundColor Green
 Write-Host "  engine        target\release\vision-engine.exe"
 Write-Host "  gateway       apps\gateway\dist"
 Write-Host "  orchestrator  services\agent-orchestrator\dist"
-Write-Host "  dashboard     apps\dashboard\.next"
+Write-Host "  dashboard     apps\dashboard\.next-prod"
 Write-Host "`nRun it with: .\scripts\start-release.ps1" -ForegroundColor DarkGray
