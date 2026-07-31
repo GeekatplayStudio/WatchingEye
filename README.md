@@ -99,9 +99,16 @@ actually running, which is the usual cause of "everything is refused".
 
 ## Network cameras (Reolink / ONVIF)
 
-Point the engine at a subnet and it reports what answered. Discovery **never
-registers a camera on its own** — adding a source to the decision path stays
-an explicit action, so a scan cannot quietly adopt an unvetted device.
+Open **[Discover](http://localhost:3000/discover)** in the dashboard: it
+detects your subnets, sweeps for cameras, and connects to an ONVIF device
+with credentials you type there. Passwords go from the engine straight to the
+device — never stored, never in a URL, never logged.
+
+Discovery **never registers a camera on its own** — adding a source to the
+decision path stays an explicit action, so a scan cannot quietly adopt an
+unvetted device.
+
+The same thing from a terminal:
 
 ```bash
 # 1. Find candidates. Every hit is then asked directly whether it speaks
@@ -186,7 +193,8 @@ the `no_std` port lands — see the roadmap, honestly marked.
 |---|---|
 | Webcam scan, connect, live capture | ✅ browser-native permission prompt |
 | Network camera discovery (port sweep + ONVIF confirm) | ✅ Rust, verified against real NVR hardware |
-| ONVIF device info, profiles, RTSP URLs | ✅ protocol tested; authenticated calls need your credentials |
+| Discover page: scan, connect, copy RTSP URLs | ✅ subnet auto-detected from the interface netmask |
+| ONVIF device info, profiles, RTSP URLs | ✅ handshake verified against real hardware; success path needs your credentials |
 | Reolink JSON API (login, NVR channels, snapshot, RTSP) | ✅ for firmware exposing `/cgi-bin/api.cgi` |
 | Point Cross Assign — click a subject, the aim follows it | ✅ Rust, locks to the track, not the coordinate |
 | Motion detection (background model, ghost-trail free) | ✅ Rust |

@@ -9,11 +9,12 @@ use crate::netscan;
 use crate::reolink_client::ReolinkClient;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
-use camera::discovery::Candidate;
+use camera::discovery::{self, Candidate};
 use camera::reolink::{ReolinkHost, Stream};
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::time::Duration;
 
 /// How long to listen for ONVIF replies.
@@ -63,9 +64,65 @@ impl ReolinkRequest {
     }
 }
 
+/// A local network this machine is attached to.
+#[derive(Debug, Clone, Serialize)]
+pub struct Interface {
+    /// Interface name, e.g. `"Ethernet"`.
+    pub name: String,
+    /// This machine's address on it.
+    pub address: String,
+    /// The CIDR range to sweep to reach the rest of that network.
+    pub cidr: String,
+    /// How many hosts that range covers, so the UI can warn before a long scan.
+    pub hosts: u64,
+}
+
+/// Report the subnets worth scanning.
+///
+/// Guessing `/24` is wrong on any network that is not one — and getting the
+/// mask wrong means most of the cameras are never probed. The interface's
+/// real netmask is the only reliable source, so it is read rather than
+/// assumed.
+async fn interfaces() -> Response {
+    let mut found: Vec<Interface> = Vec::new();
+    let Ok(addrs) = if_addrs::get_if_addrs() else {
+        return Json(Vec::<Interface>::new()).into_response();
+    };
+    for iface in addrs {
+        // Loopback has nothing to find; IPv6 is not swept.
+        if iface.is_loopback() {
+            continue;
+        }
+        let IpAddr::V4(addr) = iface.ip() else {
+            continue;
+        };
+        let if_addrs::IfAddr::V4(v4) = &iface.addr else {
+            continue;
+        };
+        let Some(cidr) = discovery::subnet_of(&addr.to_string(), &v4.netmask.to_string()) else {
+            continue;
+        };
+        let hosts = discovery::expand_cidr(&cidr).map_or(0, |h| h.len() as u64);
+        if found.iter().any(|f| f.cidr == cidr) {
+            continue;
+        }
+        found.push(Interface {
+            name: iface.name.clone(),
+            address: addr.to_string(),
+            cidr,
+            hosts,
+        });
+    }
+    // Scannable ranges first: a range too large to sweep is reported with
+    // hosts 0 and is useless to offer as the default.
+    found.sort_by(|a, b| (b.hosts > 0).cmp(&(a.hosts > 0)).then(a.name.cmp(&b.name)));
+    Json(found).into_response()
+}
+
 /// Routes for finding and interrogating cameras.
 pub fn router() -> Router {
     Router::new()
+        .route("/api/cameras/interfaces", get(interfaces))
         .route("/api/cameras/scan", post(scan))
         .route("/api/cameras/onvif/confirm", post(confirm_onvif))
         .route("/api/cameras/onvif/inventory", post(onvif_inventory))
