@@ -33,6 +33,35 @@ pub struct OnvifService {
 /// Tries the ports and paths consumer hardware actually uses. Returns the
 /// first endpoint that answers with a valid `GetSystemDateAndTimeResponse`.
 pub async fn confirm(host: &str) -> Option<OnvifService> {
+    confirm_on(host, None).await
+}
+
+/// The endpoints to try for a host, honouring an explicitly given port.
+///
+/// A port the operator supplied is tried on every known path before the
+/// defaults: they are telling us something the scan could not, and it should
+/// outrank a guess.
+fn endpoints_for(port: Option<u16>) -> Vec<(u16, &'static str)> {
+    let mut endpoints: Vec<(u16, &'static str)> = Vec::new();
+    if let Some(port) = port {
+        let mut paths: Vec<&'static str> = Vec::new();
+        for (_, path) in ONVIF_ENDPOINTS {
+            if !paths.contains(path) {
+                paths.push(path);
+            }
+        }
+        endpoints.extend(paths.into_iter().map(|path| (port, path)));
+    }
+    for (p, path) in ONVIF_ENDPOINTS {
+        if !endpoints.contains(&(*p, *path)) {
+            endpoints.push((*p, *path));
+        }
+    }
+    endpoints
+}
+
+/// Confirm ONVIF, optionally on a port the operator named.
+pub async fn confirm_on(host: &str, port: Option<u16>) -> Option<OnvifService> {
     let http = probe_client()?;
     let body = onvif::get_system_date_body();
 
@@ -40,7 +69,7 @@ pub async fn confirm(host: &str) -> Option<OnvifService> {
     // of them costs the timeout five times over, and that is paid for every
     // candidate on the subnet.
     let mut set = tokio::task::JoinSet::new();
-    for (rank, (port, path)) in ONVIF_ENDPOINTS.iter().enumerate() {
+    for (rank, (port, path)) in endpoints_for(port).into_iter().enumerate() {
         let url = format!("http://{host}:{port}{path}");
         let http = http.clone();
         let body = body.clone();
@@ -66,8 +95,8 @@ pub async fn confirm(host: &str) -> Option<OnvifService> {
         });
     }
 
-    // ONVIF_ENDPOINTS is ordered by likelihood, so when several answer, the
-    // most likely one wins rather than whichever raced home first.
+    // The endpoint list is ordered by likelihood, so when several answer,
+    // the most likely one wins rather than whichever raced home first.
     let mut best: Option<(usize, OnvifService)> = None;
     while let Some(joined) = set.join_next().await {
         if let Ok(Some((rank, service))) = joined {
@@ -358,5 +387,44 @@ mod tests {
     #[tokio::test]
     async fn a_host_with_nothing_listening_is_not_confirmed() {
         assert!(confirm("203.0.113.7").await.is_none());
+    }
+
+    #[test]
+    fn a_named_port_is_tried_before_the_defaults() {
+        let endpoints = endpoints_for(Some(8123));
+        assert_eq!(
+            endpoints.first().map(|(p, _)| *p),
+            Some(8123),
+            "an operator-supplied port outranks a guess"
+        );
+        assert!(
+            endpoints.iter().filter(|(p, _)| *p == 8123).count() > 1,
+            "the named port is tried on every known path"
+        );
+    }
+
+    #[test]
+    fn the_defaults_are_still_tried_after_a_named_port() {
+        let endpoints = endpoints_for(Some(8123));
+        for known in ONVIF_ENDPOINTS {
+            assert!(
+                endpoints.contains(known),
+                "{known:?} must remain a fallback"
+            );
+        }
+    }
+
+    #[test]
+    fn without_a_named_port_the_defaults_are_unchanged() {
+        assert_eq!(endpoints_for(None), ONVIF_ENDPOINTS.to_vec());
+    }
+
+    #[test]
+    fn a_named_port_that_is_already_a_default_is_not_duplicated() {
+        let endpoints = endpoints_for(Some(8000));
+        let mut seen = endpoints.clone();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), endpoints.len(), "no endpoint is probed twice");
     }
 }

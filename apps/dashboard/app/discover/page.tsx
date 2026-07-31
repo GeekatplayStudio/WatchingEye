@@ -14,11 +14,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader, SectionHeading, StatStrip, type Stat } from "@/components/ui/page-header";
 import { OnvifConnect } from "@/components/onvif-connect";
 import { useCameraDiscovery } from "@/lib/use-camera-discovery";
-import { Radar, ChevronDown, ChevronRight } from "lucide-react";
+import { Radar, ChevronDown, ChevronRight, Plug } from "lucide-react";
 
 export default function DiscoverPage() {
   const d = useCameraDiscovery();
   const [open, setOpen] = useState<string | null>(null);
+  const [address, setAddress] = useState("");
 
   const cameras = (d.candidates ?? []).filter((c) => c.onvif_url !== null);
   const others = (d.candidates ?? []).filter((c) => c.onvif_url === null);
@@ -35,8 +36,58 @@ export default function DiscoverPage() {
       <PageHeader
         eyebrow="WatchingEye · Camera discovery"
         title="Discover"
-        lede="Sweep a subnet for cameras and recorders. An open port is only a hint — every candidate is asked directly whether it speaks ONVIF, and only a valid reply counts as a camera."
+        lede="Connect to a camera by address, or sweep a subnet to find them. An open port is only a hint — every candidate is asked directly whether it speaks ONVIF, and only a valid reply counts as a camera."
       />
+
+      <section className="space-y-3">
+        <SectionHeading
+          title="Connect by address"
+          tag="direct"
+          note="if you already know the address"
+        />
+        <Card>
+          <CardContent className="space-y-2">
+            <form
+              className="flex flex-wrap items-end gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void (async () => {
+                  const host = await d.addByAddress(address);
+                  if (host !== undefined) {
+                    setAddress("");
+                    // Jump straight to credentials: connecting is the only
+                    // reason to have typed an address.
+                    setOpen(host);
+                  }
+                })();
+              }}
+            >
+              <label className="flex flex-col gap-1">
+                <span className="eyebrow">Camera or NVR address</span>
+                <input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="192.168.1.50  ·  192.168.1.50:8000"
+                  className="h-9 w-72 rounded-sm border border-border bg-background px-2 font-mono text-xs outline-none focus:border-accent"
+                />
+              </label>
+              <Button type="submit" variant="accent" disabled={d.adding || address.trim() === ""}>
+                <Plug className="h-4 w-4" />
+                {d.adding ? "Checking…" : "Connect"}
+              </Button>
+              <p className="font-mono text-[0.65rem] text-muted-foreground">
+                a port, or a pasted ONVIF URL, also works
+              </p>
+            </form>
+
+            {d.addError !== null && (
+              <p className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-1.5 font-mono text-[0.7rem] leading-relaxed text-danger">
+                {d.addError}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
       <section className="space-y-3">
         <SectionHeading

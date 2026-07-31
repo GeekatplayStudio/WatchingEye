@@ -128,20 +128,52 @@ pub fn router() -> Router {
 
 /// Ask one host whether it speaks ONVIF. Needs no credentials.
 async fn confirm_onvif(Json(req): Json<HostRequest>) -> Response {
-    match crate::onvif_client::confirm(&req.host).await {
+    let (host, port) = split_host_port(&req.host, req.port);
+    if host.is_empty() {
+        return fail(StatusCode::BAD_REQUEST, "an address is required");
+    }
+    match crate::onvif_client::confirm_on(&host, port).await {
         Some(service) => Json(service).into_response(),
         None => fail(
             StatusCode::NOT_FOUND,
-            &format!("{} did not answer ONVIF on any known port", req.host),
+            &format!(
+                "{host} did not answer ONVIF{}. If it is a camera, ONVIF may need enabling on it \
+                 (often Settings -> Network -> Advanced -> ONVIF).",
+                port.map_or_else(
+                    || " on any known port".to_owned(),
+                    |p| format!(" on port {p} or any known port")
+                )
+            ),
         ),
     }
 }
 
-/// A bare host address.
+/// A host to interrogate, optionally carrying its port.
 #[derive(Debug, Deserialize)]
 pub struct HostRequest {
-    /// Address to interrogate.
+    /// Address, which may be written `host:port`.
     pub host: String,
+    /// Port, when given separately from the address.
+    #[serde(default)]
+    pub port: Option<u16>,
+}
+
+/// Accept `192.168.1.50:8000` as readily as a separate port field.
+///
+/// Typing the port into the address box is the natural thing to do when you
+/// already know it, and rejecting that would be pedantry.
+fn split_host_port(raw: &str, explicit: Option<u16>) -> (String, Option<u16>) {
+    let trimmed = raw.trim();
+    // Strip a scheme and any path, so pasting a service URL also works.
+    let without_scheme = trimmed.split_once("://").map_or(trimmed, |(_, rest)| rest);
+    let authority = without_scheme.split('/').next().unwrap_or(without_scheme);
+
+    if let Some((host, port)) = authority.rsplit_once(':') {
+        if let Ok(parsed) = port.parse::<u16>() {
+            return (host.to_owned(), explicit.or(Some(parsed)));
+        }
+    }
+    (authority.to_owned(), explicit)
 }
 
 /// Credentials for an authenticated ONVIF interrogation.
@@ -330,6 +362,61 @@ mod tests {
             ..plain
         };
         assert_eq!(tls.to_host().port, 443);
+    }
+
+    #[test]
+    fn an_address_may_carry_its_own_port() {
+        assert_eq!(
+            split_host_port("192.168.1.50:8000", None),
+            ("192.168.1.50".to_owned(), Some(8000))
+        );
+        assert_eq!(
+            split_host_port("192.168.1.50", None),
+            ("192.168.1.50".to_owned(), None)
+        );
+    }
+
+    #[test]
+    fn a_pasted_service_url_is_reduced_to_host_and_port() {
+        assert_eq!(
+            split_host_port("http://192.168.1.50:8000/onvif/device_service", None),
+            ("192.168.1.50".to_owned(), Some(8000))
+        );
+    }
+
+    #[test]
+    fn an_explicit_port_wins_over_one_in_the_address() {
+        assert_eq!(
+            split_host_port("192.168.1.50:80", Some(8000)),
+            ("192.168.1.50".to_owned(), Some(8000))
+        );
+    }
+
+    #[test]
+    fn a_nonsense_port_is_not_mistaken_for_one() {
+        // Better to probe the defaults than to invent a port from junk.
+        assert_eq!(
+            split_host_port("camera:abc", None),
+            ("camera:abc".to_owned(), None)
+        );
+    }
+
+    #[test]
+    fn surrounding_whitespace_is_forgiven() {
+        assert_eq!(
+            split_host_port("  10.0.0.5  ", None),
+            ("10.0.0.5".to_owned(), None)
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_address_is_refused_before_any_socket_is_opened() {
+        let res = confirm_onvif(Json(HostRequest {
+            host: "   ".into(),
+            port: None,
+        }))
+        .await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

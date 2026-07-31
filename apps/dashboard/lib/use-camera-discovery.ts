@@ -60,6 +60,14 @@ export interface OnvifInventory {
 export const ENGINE_DOWN =
   "Vision engine unreachable — start it with Start-WatchingEye.bat, or: cargo run -p vision-engine --release";
 
+/** The host part of a service URL, for keying a camera by address. */
+function hostOf(url: string): string | null {
+  const rest = url.split("://")[1] ?? url;
+  const authority = rest.split("/")[0] ?? "";
+  const host = authority.includes(":") ? authority.slice(0, authority.lastIndexOf(":")) : authority;
+  return host === "" ? null : host;
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   let res: Response;
   try {
@@ -100,6 +108,8 @@ export function useCameraDiscovery() {
   const [scanning, setScanning] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   const loadInterfaces = useCallback(async () => {
     setProbe("loading");
@@ -158,6 +168,47 @@ export function useCameraDiscovery() {
     }
   }, [cidr]);
 
+  /**
+   * Add one camera by address, skipping the sweep.
+   *
+   * For a camera whose address you already know, scanning a thousand others
+   * to reach it is wasted time — and a camera on a different subnet, or one
+   * behind a route the sweep does not cover, cannot be found any other way.
+   *
+   * Accepts `host`, `host:port`, or a pasted ONVIF service URL.
+   */
+  const addByAddress = useCallback(async (address: string) => {
+    const trimmed = address.trim();
+    if (trimmed === "") return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      const service = await post<{ url: string; device_time: string | null }>(
+        "/api/cameras/onvif/confirm",
+        { host: trimmed },
+      );
+      const host = hostOf(service.url) ?? trimmed;
+      setCandidates((current) => {
+        const entry: Candidate = {
+          address: host,
+          open_ports: [],
+          hint: "onvif-camera",
+          onvif_url: service.url,
+        };
+        // Re-adding a camera already listed should update it, not duplicate
+        // it — the operator is usually correcting a port.
+        const rest = (current ?? []).filter((c) => c.address !== host);
+        return [entry, ...rest];
+      });
+      return host;
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "could not reach that address");
+      return undefined;
+    } finally {
+      setAdding(false);
+    }
+  }, []);
+
   const inventory = useCallback(
     async (serviceUrl: string, user: string, password: string): Promise<OnvifInventory> =>
       post<OnvifInventory>("/api/cameras/onvif/inventory", {
@@ -179,6 +230,9 @@ export function useCameraDiscovery() {
     elapsedMs,
     error,
     scan,
+    addByAddress,
+    adding,
+    addError,
     inventory,
   };
 }

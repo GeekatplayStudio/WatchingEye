@@ -139,7 +139,15 @@ pub async fn onvif_discover(wait: Duration) -> Vec<String> {
 ///
 /// ONVIF replies are folded into the swept candidates rather than listed
 /// separately, so one physical camera appears once however it was found.
+///
+/// Multicast is not confined to the range being swept — every ONVIF device
+/// on the link answers, including ones on other subnets. Replies from
+/// outside the requested range are dropped: asking to scan one network and
+/// being handed a device from another is a surprise, and it makes the same
+/// scan return different things depending on what happened to be listening.
 pub async fn discover(cidr: &str, onvif_wait: Duration) -> Result<Vec<Candidate>, DiscoveryError> {
+    let in_range: std::collections::HashSet<String> =
+        discovery::expand_cidr(cidr)?.into_iter().collect();
     let (swept, onvif) = tokio::join!(sweep(cidr), onvif_discover(onvif_wait));
     let mut candidates = swept?;
 
@@ -147,6 +155,9 @@ pub async fn discover(cidr: &str, onvif_wait: Duration) -> Result<Vec<Candidate>
         let Some(host) = discovery::host_of(&url) else {
             continue;
         };
+        if !in_range.contains(&host) {
+            continue;
+        }
         match candidates.iter_mut().find(|c| c.address == host) {
             Some(existing) => {
                 existing.onvif_url = Some(url);
@@ -194,6 +205,21 @@ mod tests {
         // .0 of a /30 is the network address; nothing answers there.
         let found = sweep("203.0.113.0/30").await.unwrap();
         assert!(found.is_empty(), "unexpected {found:?}");
+    }
+
+    #[tokio::test]
+    async fn a_scan_never_reports_a_device_outside_the_requested_range() {
+        // Multicast reaches every ONVIF device on the link. Without a range
+        // filter, scanning reserved documentation space returns whatever
+        // camera happens to be on the developer's own LAN — which is how
+        // this was found.
+        let found = discover("203.0.113.0/30", Duration::from_millis(400))
+            .await
+            .unwrap();
+        assert!(
+            found.is_empty(),
+            "nothing in 203.0.113.0/30 can answer, got {found:?}"
+        );
     }
 
     #[tokio::test]
