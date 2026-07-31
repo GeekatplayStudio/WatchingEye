@@ -13,6 +13,7 @@ import { AiVisionPanel } from "@/components/ai-vision-panel";
 import { LiveTuning } from "@/components/live-tuning";
 import { ServoPanel } from "@/components/servo-panel";
 import { ClassFilter } from "@/components/class-filter";
+import { ActiveTrackingPanel } from "@/components/active-tracking-panel";
 import {
   StatusChip,
   IconAction,
@@ -23,6 +24,7 @@ import {
   Unplug,
   Plug,
 } from "@/components/status-bar";
+import { Target, X, Crosshair } from "lucide-react";
 import { useWebcamPipeline } from "@/lib/use-webcam-pipeline";
 import { useEngineConfig } from "@/lib/use-engine-config";
 import { useServiceStatus } from "@/lib/use-service-status";
@@ -34,8 +36,35 @@ export default function ConsolePage() {
   const status = useServiceStatus();
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // The engine owns the lock, so its report — not the click — says whether
+  // anything is actually being followed.
+  const pinnedStatus = p.outcome?.pinned_status ?? "idle";
+  const following = pinnedStatus === "following";
+  const trackedId = p.outcome?.pinned_track_id ?? null;
+
+  const handleVideoClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!p.connected) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    p.setPinnedTarget({
+      x: Math.max(0, Math.min(1, x)),
+      y: Math.max(0, Math.min(1, y)),
+    });
+  };
+
   return (
     <div className="mx-auto flex max-w-[1600px] flex-col gap-3">
+      {/* Slim header: the console is dense, so it gets a rule, not a title block. */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="eyebrow eyebrow-accent">WatchingEye · Live console</p>
+          <p className="eyebrow">Click the frame to pin a target</p>
+        </div>
+        <div className="rule-accent" />
+      </div>
+
       {/* Icon bar: health on the left, camera controls on the right. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -65,6 +94,14 @@ export default function ConsolePage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          {p.pinnedTarget && (
+            <IconAction
+              icon={Crosshair}
+              label="Clear Point Target"
+              tone="primary"
+              onClick={p.clearPinnedTarget}
+            />
+          )}
           <IconAction
             icon={RefreshCw}
             label={p.scanning ? "Scanning" : "Scan"}
@@ -93,6 +130,42 @@ export default function ConsolePage() {
         </p>
       )}
 
+      {p.pinnedTarget !== null && (
+        <div
+          className={
+            following
+              ? "flex items-center justify-between rounded-md border border-cyan-500/40 bg-cyan-950/20 px-3 py-1.5 text-xs text-cyan-300"
+              : "flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs text-accent"
+          }
+        >
+          <span className="flex items-center gap-1.5 font-medium">
+            <Target className={following ? "h-4 w-4 text-cyan-400" : "h-4 w-4 animate-pulse"} />
+            {following ? (
+              <>
+                Point Cross Assign: <span className="font-mono">following</span> the assigned
+                subject as it moves
+                {trackedId !== null && (
+                  <span className="font-mono opacity-70"> · track {trackedId.slice(0, 8)}</span>
+                )}
+                {" — click anywhere on video to reassign"}
+              </>
+            ) : (
+              <>
+                Point Cross Assign: <span className="font-mono">searching</span> — nothing to
+                follow at ({(p.pinnedTarget.x * 100).toFixed(1)}%,{" "}
+                {(p.pinnedTarget.y * 100).toFixed(1)}%), holding there
+              </>
+            )}
+          </span>
+          <button
+            onClick={p.clearPinnedTarget}
+            className="flex items-center gap-1 rounded bg-cyan-900/60 px-2 py-0.5 text-cyan-100 hover:bg-cyan-800 transition-colors"
+          >
+            <X className="h-3.5 w-3.5" /> Clear Target (Auto)
+          </button>
+        </div>
+      )}
+
       {pickerOpen && !p.connected && p.devices.length > 0 && (
         <Card>
           <CardContent className="flex flex-wrap items-center gap-2 p-3">
@@ -116,7 +189,11 @@ export default function ConsolePage() {
       {/* video | AI commentary | tuning — one glance covers all three */}
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_20rem_15rem]">
         <Card className="overflow-hidden">
-          <div className="relative bg-muted">
+          <div
+            className="relative bg-muted cursor-crosshair overflow-hidden select-none"
+            onClick={handleVideoClick}
+            title="Click anywhere to assign Point Cross Target tracking"
+          >
             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
             <video ref={videoRef} className="w-full" muted playsInline />
             {p.outcome !== null && (
@@ -126,6 +203,8 @@ export default function ConsolePage() {
                 targetId={p.outcome.target_id}
                 gridWidth={p.gridWidth}
                 gridHeight={p.gridHeight}
+                pinnedTarget={p.pinnedTarget}
+                pinnedStatus={pinnedStatus}
               />
             )}
             {p.connected && <DetectionOverlay objects={p.detections} />}
@@ -162,6 +241,7 @@ export default function ConsolePage() {
         </Card>
 
         <div className="flex flex-col gap-3">
+          <ActiveTrackingPanel activeClasses={["person", "dog", "cat", "car"]} />
           <Card>
             <CardContent className="p-3">
               <ClassFilter />

@@ -30,6 +30,9 @@ pub struct FrameRequest {
     /// so it must reflect real elapsed time rather than a nominal frame rate.
     #[serde(default)]
     pub dt_secs: Option<f32>,
+    /// Optional target point [x, y] in normalized coordinates [0.0, 1.0] for Point Cross Assign.
+    #[serde(default)]
+    pub pinned_target: Option<[f32; 2]>,
 }
 
 /// Engine state shared across requests.
@@ -61,7 +64,7 @@ pub fn router(engine: SharedEngine, registry: SharedRegistry) -> Router {
         .route("/api/identities/name", post(identify::name_identity))
         .with_state(registry);
 
-    frames.merge(identities)
+    frames.merge(identities).merge(crate::cameras_api::router())
 }
 
 async fn health() -> Json<Health> {
@@ -142,6 +145,7 @@ mod tests {
             height: 4,
             samples: vec![10; 16],
             dt_secs: Some(0.1),
+            pinned_target: None,
         };
         let Json(out) = ingest_frame(State(engine()), Json(req)).await;
         assert!(!out.motion);
@@ -156,6 +160,7 @@ mod tests {
             height: 4,
             samples: vec![10; 5],
             dt_secs: Some(0.1),
+            pinned_target: None,
         };
         let Json(out) = ingest_frame(State(engine()), Json(req)).await;
         assert!(out.rejected_reason.is_some());

@@ -281,9 +281,49 @@ Adapting the node-graph editor from the LogiBoard/LogiTensor project
 
 ---
 
+## Phase 6 — Natural Language Dynamic Tracking, Deep Vision Recognition & Vector Dataset AI
+
+### Step 6.1 — Natural Language Intent & Target Registration Engine
+- User registers tracking tasks via natural language (e.g. *"track and register all dogs"*, *"track all cars passing by my house and capture all license plates"*).
+- `NLTargetParser` converts natural language input into typed target filters (`target_classes`, `attributes`, `actions`, `trigger_conditions`).
+- Exit criteria:
+  - [ ] Natural language input `"track all dogs"` parses to target class `dog` with automatic snapshot & vector dataset enrollment enabled
+  - [ ] Natural language input `"track all cars and capture license plates"` enables vehicle tracking + ANPR OCR pass
+  - [ ] Live tracking controller broadcasts dynamic rule updates to vision engine via WebSocket in < 50 ms
+
+### Step 6.2 — Deeper Recognition & Attribute Extractor (ANPR & Fine-Grained AI)
+- Deep multi-modal vision combining YOLO11, Open-Vocabulary CLIP/SigLIP embeddings, ANPR (Automatic Number Plate Recognition), and fine-grained attribute classification (breed, color, vehicle make/model).
+- Exit criteria:
+  - [ ] Dog crop snapshot correctly extracts breed (e.g., `"Golden Retriever"`) and primary color with confidence score
+  - [ ] Vehicle crop snapshot extracts license plate text string (e.g., `"ABC-1234"`), state/region, and vehicle color/type
+  - [ ] Unreadable plates or low confidence OCR results are flagged as `ocr_unconfirmed` with evidence trace
+
+### Step 6.3 — Multimodal Vector Database & Dataset Auto-Builder
+- Autonomous dataset builder persisting identified objects into pgvector / Qdrant with visual embeddings + structured metadata (`{who, when, what, camera, trajectory}`).
+- Exit criteria:
+  - [ ] Every gated tracking event auto-generates a vector record with image embedding + metadata in pgvector
+  - [ ] Dataset storage overhead < 500 KB per recorded event including cropped webp snapshot and 512-dim embedding
+  - [ ] Bulk insert of 1,000 detection vector records in < 1 second
+
+### Step 6.4 — Natural Language Recall & Multimodal Search Engine
+- Natural language querying system allowing users to search and recall past events and dataset entries (e.g., *"Show all golden retrievers seen yesterday"*, *"When did license plate ABC-1234 pass by?"*).
+- Exit criteria:
+  - [ ] Query `"golden retriever yesterday"` retrieves matching dog event records with > 90% precision
+  - [ ] Query `"license plate ABC-1234"` returns chronological timeline of sightings with snapshot evidence in < 100 ms
+  - [ ] Grounded RAG validator ensures answers quote exact database records and never hallucinate unrecorded sightings
+
+### Step 6.5 — Live Active Tracking Monitor & Dynamic Control Panel
+- Real-time console UI showing currently active dynamic tracking targets, live data collection metrics, and natural language quick-add input.
+- Exit criteria:
+  - [ ] User can add a new tracking prompt (e.g. `"track cats"`) from the UI and see the engine start monitoring immediately
+  - [ ] UI shows live dataset count updates in real-time as objects pass through camera view
+
+---
+
 ## Standing quality gates (every step, every phase)
 - `cargo fmt` / `clippy -D warnings` / `cargo deny` clean
 - All new public items documented with examples
 - No file > 500 lines; no function > ~75 lines
 - Tests accompany every change; coverage never decreases
 - Model/prompt version bumped whenever a prompt changes
+

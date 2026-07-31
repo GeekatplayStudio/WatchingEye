@@ -1,19 +1,27 @@
 @import "tailwindcss";
 
-/* shadcn-inspired design tokens, dark surveillance-console theme. */
+/*
+ * Console theme: near-black terminal surface, hairline rules, monospace
+ * metadata, amber for attention and green for healthy. Type does the
+ * structural work — boxes and shadows stay out of the way.
+ */
 :root {
-  --background: 222 47% 6%;
-  --foreground: 214 32% 91%;
-  --card: 222 44% 9%;
-  --card-foreground: 214 32% 91%;
-  --muted: 220 27% 14%;
-  --muted-foreground: 218 11% 65%;
-  --border: 217 28% 18%;
-  --primary: 160 84% 39%;
-  --primary-foreground: 160 84% 96%;
-  --warning: 38 92% 50%;
-  --danger: 0 72% 51%;
-  --radius: 0.625rem;
+  --background: 210 30% 6%;
+  --foreground: 207 33% 92%;
+  --card: 212 26% 9%;
+  --card-foreground: 207 33% 92%;
+  --muted: 213 22% 13%;
+  --muted-foreground: 210 14% 60%;
+  --border: 213 22% 16%;
+  --primary: 127 49% 49%;
+  --primary-foreground: 210 30% 6%;
+  --accent: 41 74% 57%;
+  --warning: 41 74% 57%;
+  --danger: 3 88% 63%;
+  --radius: 0.25rem;
+
+  --font-sans: var(--font-sans-stack), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: var(--font-mono-stack), ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
 @theme inline {
@@ -26,15 +34,95 @@
   --color-border: hsl(var(--border));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-accent: hsl(var(--accent));
   --color-warning: hsl(var(--warning));
   --color-danger: hsl(var(--danger));
   --radius-lg: var(--radius);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  font-family: var(--font-sans);
   font-feature-settings: "tnum";
+}
+
+/* --- Type roles ------------------------------------------------------- */
+
+/* Small uppercase monospace label above a title or beside a stat. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+.eyebrow-accent {
+  color: hsl(var(--accent));
+}
+
+/* Page title: heavy, tight, near-white. */
+.display {
+  font-size: clamp(1.75rem, 1.2rem + 1.8vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+/* Standfirst paragraph under a page title. */
+.lede {
+  max-width: 34rem;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.65;
+}
+
+/* The amber hairline that closes a page header. */
+.rule-accent {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--accent)) 0%,
+    hsl(var(--accent)) 55%,
+    hsl(var(--border)) 100%
+  );
+}
+
+/* Inline identifiers: file paths, endpoints, symbols. */
+.tok,
+code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  background: hsl(var(--muted));
+  color: hsl(var(--accent));
+}
+
+/* --- Structures ------------------------------------------------------- */
+
+/* Bordered strip of headline numbers, divided by hairlines. */
+.stat-strip {
+  display: grid;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+}
+.stat-strip > * + * {
+  border-left: 1px solid hsl(var(--border));
+}
+@media (max-width: 900px) {
+  .stat-strip > * + * {
+    border-left: 0;
+    border-top: 1px solid hsl(var(--border));
+  }
+}
+
+/* Hairline-separated list rows — the roadmap/feed pattern. */
+.row-list > * + * {
+  border-top: 1px solid hsl(var(--border));
 }
 
 /* Subtle scrollbars for feed panels. */

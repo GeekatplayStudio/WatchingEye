@@ -17,6 +17,7 @@ import { createStore, type EventStore } from "./db.js";
 import type { DetectionEvent, ObjectClass } from "./events.js";
 import { classify, type ClassifyResult } from "./classify.js";
 import { applyPatch, DEFAULT_SETTINGS, SettingsError, type Settings } from "./settings.js";
+import { globalDatasetStore, type DatasetRecord } from "./dataset.js";
 
 /** Options for building the server. */
 export interface ServerOptions {
@@ -135,6 +136,46 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     }
   });
 
+  app.post("/api/nlp/target", async (req, reply) => {
+    const body = req.body as { prompt?: string };
+    if (typeof body?.prompt !== "string" || body.prompt.trim() === "") {
+      return reply.status(400).send({ error: "prompt string is required" });
+    }
+    try {
+      const res = await fetch(
+        `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/parse-intent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: body.prompt }),
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+      const parsed = (await res.json()) as {
+        targetClasses?: string[];
+        actionPolicy?: string;
+      };
+      if (res.ok && Array.isArray(parsed.targetClasses)) {
+        const merged = Array.from(new Set([...settings.trackedClasses, ...parsed.targetClasses]));
+        settings = { ...settings, trackedClasses: merged };
+        const payload = JSON.stringify({ type: "settings", settings });
+        for (const socket of sockets) socket.send(payload);
+      }
+      return { parsed, settings };
+    } catch (err) {
+      return reply.status(503).send({
+        error: err instanceof Error ? `orchestrator unreachable: ${err.message}` : "orchestrator error",
+      });
+    }
+  });
+
+  app.get("/api/dataset/search", async (req) => {
+    const { q, limit } = req.query as { q?: string; limit?: string };
+    const n = Math.min(Number(limit ?? 50) || 50, 500);
+    const records = await globalDatasetStore.search(q ?? "", n);
+    return { records };
+  });
+
   app.post("/api/classify", async (req, reply) => {
     const body = req.body as ClassifyBody;
     if (typeof body?.event?.objectId !== "string") {
@@ -191,6 +232,24 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     }
 
     await broadcast(event);
+
+    const plateClaim = event.evidence.find((e) => e.label.startsWith("plate:"))?.label.replace("plate:", "");
+    const breedClaim = event.evidence.find((e) => e.label.startsWith("breed:"))?.label.replace("breed:", "");
+    const record: DatasetRecord = {
+      id: `ds-${event.id}`,
+      objectId: event.objectId,
+      class: event.class,
+      cameraId: event.cameraId,
+      timestamp: event.timestamp,
+      confidence: event.confidence,
+      evidence: event.evidence,
+      snapshotRef: body.event.snapshotRef ?? `snap-${event.id}`,
+    };
+    if (event.descriptors !== undefined) record.descriptors = event.descriptors;
+    if (plateClaim !== undefined) record.licensePlate = plateClaim;
+    if (breedClaim !== undefined) record.breedOrModel = breedClaim;
+    await globalDatasetStore.insertRecord(record);
+
     return { outcome: result.outcome, event, latencyMs: result.latencyMs };
   });
 

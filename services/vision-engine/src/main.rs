@@ -10,10 +10,15 @@
 
 mod api;
 mod bind;
+mod cameras_api;
 mod config;
 mod engine;
 mod identify;
+mod netscan;
+mod onvif_client;
+mod pinned;
 mod pipeline;
+mod reolink_client;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

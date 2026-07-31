@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { ArrowLeft } from "lucide-react";
 
 /** Page frame: back link, title, and lede. */
@@ -18,14 +19,11 @@ export function DocShell({
     <div className="mx-auto max-w-3xl space-y-6">
       <Link
         href="/docs"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground hover:text-accent"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Documentation
       </Link>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-2 text-muted-foreground">{lede}</p>
-      </div>
+      <PageHeader eyebrow="WatchingEye · Documentation" title={title} lede={lede} />
       {children}
     </div>
   );
@@ -89,7 +87,7 @@ export function Gate({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div className="rounded border border-border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">gate {n}</Badge>
         <span className="font-medium text-foreground">{name}</span>

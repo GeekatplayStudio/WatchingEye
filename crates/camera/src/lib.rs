@@ -4,6 +4,10 @@
 //! WebRTC, drone) implements [`CameraSource`]. The pipeline only ever sees
 //! this trait, so backends are swappable and testable in isolation.
 
+pub mod discovery;
+pub mod onvif;
+pub mod reolink;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

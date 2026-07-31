@@ -11,7 +11,12 @@
  * between confirmations, and never invents or removes a box.
  */
 import { useEffect, useRef, useState } from "react";
-import { HEADING_ARROWS, type AimTarget, type TrackedRegion } from "@/lib/use-webcam-pipeline";
+import {
+  HEADING_ARROWS,
+  type AimTarget,
+  type PinnedStatus,
+  type TrackedRegion,
+} from "@/lib/use-webcam-pipeline";
 
 interface Props {
   regions: TrackedRegion[];
@@ -19,12 +24,22 @@ interface Props {
   targetId: string | null;
   gridWidth: number;
   gridHeight: number;
+  pinnedTarget?: { x: number; y: number } | null;
+  pinnedStatus?: PinnedStatus;
 }
 
 /** How far ahead extrapolation may run before it is clearly guessing. */
 const MAX_EXTRAPOLATION_FRAMES = 2.5;
 
-export function TrackOverlay({ regions, target, targetId, gridWidth, gridHeight }: Props) {
+export function TrackOverlay({
+  regions,
+  target,
+  targetId,
+  gridWidth,
+  gridHeight,
+  pinnedTarget,
+  pinnedStatus = "idle",
+}: Props) {
   const [, force] = useState(0);
   const receivedAt = useRef(performance.now());
   const latest = useRef(regions);
@@ -92,8 +107,62 @@ export function TrackOverlay({ regions, target, targetId, gridWidth, gridHeight 
         );
       })}
 
+      {/* Point Cross Assign reticle.
+          While following, it rides the subject's live aim point — the click
+          only chose *what* to follow, so leaving the reticle at that
+          coordinate would show the operator the wrong thing the moment the
+          subject moved. While searching it stays where it was assigned. */}
+      {pinnedTarget != null && (
+        <div
+          className="absolute z-20 flex flex-col items-center"
+          style={
+            pinnedStatus === "following" && target !== null
+              ? {
+                  left: `${((target.x + 1) / 2) * 100}%`,
+                  top: `${((target.y + 1) / 2) * 100}%`,
+                  transform: "translate(-50%, -50%)",
+                  transition: "left 90ms linear, top 90ms linear",
+                }
+              : {
+                  left: `${pinnedTarget.x * 100}%`,
+                  top: `${pinnedTarget.y * 100}%`,
+                  transform: "translate(-50%, -50%)",
+                }
+          }
+        >
+          <div className="relative flex items-center justify-center">
+            {/* Outer animated pulse ring */}
+            <div className="absolute h-12 w-12 rounded-full border border-cyan-400 opacity-75 animate-ping" />
+            <svg width="56" height="56" viewBox="0 0 56 56" className="drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]">
+              {/* Outer circle */}
+              <circle cx="28" cy="28" r="20" fill="none" stroke="#06b6d4" strokeWidth="1.75" strokeDasharray="4 2" />
+              {/* Inner ring */}
+              <circle cx="28" cy="28" r="10" fill="none" stroke="#06b6d4" strokeWidth="1.25" opacity="0.9" />
+              {/* Center point dot */}
+              <circle cx="28" cy="28" r="3" fill="#22d3ee" />
+              {/* Crosshair lines */}
+              <line x1="28" y1="0" x2="28" y2="15" stroke="#06b6d4" strokeWidth="2" />
+              <line x1="28" y1="41" x2="28" y2="56" stroke="#06b6d4" strokeWidth="2" />
+              <line x1="0" y1="28" x2="15" y2="28" stroke="#06b6d4" strokeWidth="2" />
+              <line x1="41" y1="28" x2="56" y2="28" stroke="#06b6d4" strokeWidth="2" />
+            </svg>
+          </div>
+          <span
+            className={
+              pinnedStatus === "following"
+                ? "mt-1 whitespace-nowrap rounded border border-cyan-500/50 bg-cyan-950/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-cyan-300 shadow-md"
+                : "mt-1 whitespace-nowrap rounded border border-accent/50 bg-accent/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-accent shadow-md"
+            }
+          >
+            {pinnedStatus === "following"
+              ? "⊕ FOLLOWING"
+              : `⊕ SEARCHING (${(pinnedTarget.x * 100).toFixed(0)}%, ${(pinnedTarget.y * 100).toFixed(0)}%)`}
+          </span>
+        </div>
+      )}
+
       {/* Crosshair at the aim point the servos are following. */}
-      {target !== null && (
+      {target !== null && pinnedTarget == null && (
         <div
           className="absolute"
           style={{

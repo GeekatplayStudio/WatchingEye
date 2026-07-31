@@ -5,6 +5,7 @@
  */
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { ArrowDown } from "lucide-react";
 
 const STAGES: Array<{ name: string; detail: string; owner: string }> = [
@@ -24,11 +25,12 @@ const STAGES: Array<{ name: string; detail: string; owner: string }> = [
 export default function PipelinePage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Pipeline</h1>
-      <p className="text-sm text-muted-foreground">
-        The complete decision path. There are no other paths — no cycles, no autonomous
-        loops, no LLM-driven routing.
-      </p>
+      <PageHeader
+        eyebrow="WatchingEye · Deterministic DAG"
+        title="Pipeline"
+        lede="The complete decision path. There are no other paths — no cycles, no autonomous loops, no LLM-driven routing."
+        actions={<Badge variant="outline">{`${STAGES.length} stages`}</Badge>}
+      />
       <div className="flex flex-col items-stretch">
         {STAGES.map((stage, i) => (
           <div key={stage.name}>
@@ -38,13 +40,11 @@ export default function PipelinePage() {
               </div>
             )}
             <Card>
-              <CardHeader className="pb-0">
-                <div className="flex items-center justify-between">
-                  <CardTitle>{stage.name}</CardTitle>
-                  <Badge variant="outline">{stage.owner}</Badge>
-                </div>
+              <CardHeader>
+                <CardTitle>{stage.name}</CardTitle>
+                <Badge variant="outline">{stage.owner}</Badge>
               </CardHeader>
-              <CardContent className="pt-1 text-sm text-muted-foreground">
+              <CardContent className="text-sm text-muted-foreground">
                 {stage.detail}
               </CardContent>
             </Card>

@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
 import { ShieldCheck, GitBranch, Eye, Mic, Boxes, Fingerprint } from "lucide-react";
 
 const PAGES = [
@@ -50,13 +51,11 @@ const PAGES = [
 export default function DocsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Documentation</h1>
-        <p className="mt-2 text-muted-foreground">
-          This system is built so that nothing about a decision is hidden from you. These pages
-          explain exactly how it reaches its conclusions — including what it cannot do.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="WatchingEye · Documentation"
+        title="Documentation"
+        lede="This system is built so that nothing about a decision is hidden from you. These pages explain exactly how it reaches its conclusions — including what it cannot do."
+      />
 
       <Card>
         <CardHeader>

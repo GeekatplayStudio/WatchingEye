@@ -50,6 +50,9 @@ ENGINE_OK=1
 (cd "$ROOT" && cargo build -p vision-engine --release) || ENGINE_OK=0
 if [ "$ENGINE_OK" = "1" ]; then ok "engine built"; else warn "engine build failed - dashboard runs without live tracking"; fi
 
+step "Checking the vision model daemon"
+bash "$ROOT/scripts/ensure-ollama.sh"
+
 step "Starting services"
 PIDS=()
 cleanup() { for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null || true; done; }

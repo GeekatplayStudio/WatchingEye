@@ -17,7 +17,7 @@ crates/                  Rust workspace — the deterministic core
   events/                Event engine (Detected, ZoneEntered, ...)
   guardrails/            LLM output validation (schema → range → confidence → policy → safety)
   rules/                 Deterministic rule engine (IF person AND zone AND time THEN notify)
-  camera/                Camera source abstraction (RTSP, USB, file, ...) behind one trait
+  camera/                Camera sources behind one trait, plus Reolink + ONVIF + LAN discovery
   motion/                Background-model motion detection + blob extraction (the fast path)
   tracker/               IoU association, TriggerGate, object timelines
   identity/              Deterministic re-identification — weighted attributes, never a model
@@ -51,7 +51,8 @@ builds the Rust core, starts all four services, and opens the dashboard. It
 is safe to re-run — finished work is detected and skipped.
 
 Then open **[Console](http://localhost:3000/cameras)**, click *Scan*, and
-connect your webcam to watch the pipeline track live.
+connect your webcam to watch the pipeline track live. To use IP cameras or an
+NVR instead, see [Network cameras](#network-cameras-reolink--onvif) below.
 
 **To stop everything:** double-click `Stop-WatchingEye.bat` (Windows) or run
 `./scripts/stop.sh`. It stops only processes listening on this project's
@@ -87,6 +88,80 @@ separately later):
 | `yolo11n.onnx` | Real-time object detection | `models/vision/` |
 | `ggml-base.en.bin` | Whisper voice recognition | `models/voice/` |
 
+The orchestrator resolves its vision model once at startup and reports the
+result at `/health`. Pin one with `VLM_MODEL` and it is always honoured, even
+if absent — silently substituting a different model would change what the
+system decides without anyone asking. With nothing pinned it detects an
+installed vision model. If none is installed, classification refuses every
+event and says exactly which `ollama pull` fixes it, rather than failing
+per-frame with a transport error. Startup also checks the ollama daemon is
+actually running, which is the usual cause of "everything is refused".
+
+## Network cameras (Reolink / ONVIF)
+
+Point the engine at a subnet and it reports what answered. Discovery **never
+registers a camera on its own** — adding a source to the decision path stays
+an explicit action, so a scan cannot quietly adopt an unvetted device.
+
+```bash
+# 1. Find candidates. Every hit is then asked directly whether it speaks
+#    ONVIF, so an open port becomes a confirmed camera or nothing.
+curl -X POST localhost:8090/api/cameras/scan \
+     -H 'Content-Type: application/json' -d '{"cidr":"192.168.1.0/24"}'
+
+# 2. Confirm one host. Needs no credentials — GetSystemDateAndTime is
+#    unauthenticated by specification, and also reports the device clock.
+curl -X POST localhost:8090/api/cameras/onvif/confirm \
+     -H 'Content-Type: application/json' -d '{"host":"192.168.1.50"}'
+
+# 3. Enumerate cameras and RTSP URLs (credentials required).
+curl -X POST localhost:8090/api/cameras/onvif/inventory \
+     -H 'Content-Type: application/json' \
+     -d '{"service_url":"http://192.168.1.50:8000/onvif/device_service",
+          "user":"USER","password":"PASS"}'
+
+# Reolink firmware with the JSON CGI API also has a native path:
+curl -X POST localhost:8090/api/cameras/reolink/probe \
+     -H 'Content-Type: application/json' \
+     -d '{"host":"192.168.1.50","user":"USER","password":"PASS"}'
+```
+
+**Which protocol do I need?** Reolink hardware is split. Newer firmware
+answers the JSON API at `/cgi-bin/api.cgi`; older Baichuan-era devices
+(recognisable by `BC_IP_PORT = 9000` in their web root) do not, and only
+speak ONVIF — often on **port 8000**, not 80. Try `onvif/confirm` first: it
+costs nothing and needs no password.
+
+Notes that save an afternoon:
+
+- **PoE cameras behind an NVR will not appear in a LAN scan.** The recorder
+  puts them on its own private subnet; you reach them through the NVR by
+  channel, which is what the channel and profile enumeration is for.
+- **An NVR may need ONVIF switched on** — typically *Settings → Network →
+  Advanced → ONVIF*, sometimes with its own separate user account.
+- **A drifted device clock rejects correct credentials.** ONVIF signs a
+  timestamp, so the device's own reported time is used to sign requests.
+- Sweeps are bounded: a range wider than 4096 addresses is refused rather
+  than quietly started, and `/24`–`/22` home networks take a few seconds.
+
+Credentials are passed per request and never written to disk or logged.
+
+## Building a release
+
+`Start-WatchingEye.bat` / `./start.sh` run everything from source with
+watchers. For a compiled build:
+
+```
+Build-WatchingEye.bat              # Windows: cargo --release + tsc + next build
+./scripts/build.sh                 # macOS / Linux
+Start-WatchingEye-Release.bat      # run the built artifacts (no watchers)
+./scripts/start-release.sh         # same, add BUILD=1 to build first
+```
+
+The build reports every failing component rather than stopping at the first,
+and the release launcher verifies artifacts exist instead of half-starting.
+`-SkipRust` / `-SkipNode` (or `SKIP_RUST=1` / `SKIP_NODE=1`) build one half.
+
 ## Two applications, one workspace
 
 | App | Target | Contents | Binary |
@@ -110,6 +185,10 @@ the `no_std` port lands — see the roadmap, honestly marked.
 | Capability | Status |
 |---|---|
 | Webcam scan, connect, live capture | ✅ browser-native permission prompt |
+| Network camera discovery (port sweep + ONVIF confirm) | ✅ Rust, verified against real NVR hardware |
+| ONVIF device info, profiles, RTSP URLs | ✅ protocol tested; authenticated calls need your credentials |
+| Reolink JSON API (login, NVR channels, snapshot, RTSP) | ✅ for firmware exposing `/cgi-bin/api.cgi` |
+| Point Cross Assign — click a subject, the aim follows it | ✅ Rust, locks to the track, not the coordinate |
 | Motion detection (background model, ghost-trail free) | ✅ Rust |
 | Region extraction + object tracking with stable IDs | ✅ Rust |
 | Trigger gate (opens once per object, not per frame) | ✅ Rust |
@@ -141,7 +220,7 @@ and the logic designer are next).
 - Max 500 lines per file (preferred ≤ 250); functions ≤ ~75 lines
 - No `unwrap()`/`expect()` in production code paths (test modules are
   explicitly exempted — see CLAUDE.md)
-- 168 Rust tests + 65 orchestrator + 17 gateway, all passing; every public
+- 246 Rust tests + 86 orchestrator + 18 gateway, all passing; every public
   item documented with rustdoc/JSDoc
 - `clippy::pedantic` with `-D warnings`, `rustfmt`; ESLint + Prettier + TS strict
 - All AI decisions logged with evidence, confidence, model + prompt versions

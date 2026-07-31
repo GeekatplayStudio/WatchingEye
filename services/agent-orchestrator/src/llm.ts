@@ -81,7 +81,7 @@ export class OllamaProvider implements LlmProvider {
         }),
       });
       if (!res.ok) {
-        throw new LlmError(`ollama returned ${res.status}`, this.name);
+        throw new LlmError(await this.describeHttpFailure(res), this.name);
       }
       const body = (await res.json()) as { response?: unknown };
       if (typeof body.response !== "string") {
@@ -94,9 +94,62 @@ export class OllamaProvider implements LlmProvider {
       };
     } catch (err) {
       if (err instanceof LlmError) throw err;
-      throw new LlmError("ollama request failed", this.name, err);
+      throw new LlmError(this.describeTransportFailure(err), this.name, err);
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Turn a non-2xx response into a message that names the fix. A 404 from
+   * `/api/generate` means the model is not pulled — by far the most common
+   * cause, and unrecoverable without an explicit `ollama pull`.
+   */
+  private async describeHttpFailure(res: Response): Promise<string> {
+    if (res.status === 404) {
+      return `ollama has no model "${this.model}" — install it with: ollama pull ${this.model}`;
+    }
+    const body = await res.text().catch(() => "");
+    const detail = body.slice(0, 200).trim();
+    return `ollama returned ${res.status}${detail === "" ? "" : `: ${detail}`}`;
+  }
+
+  /**
+   * Distinguish "the daemon is not running" from "it was too slow". Both
+   * surface as a thrown fetch, and the two need opposite responses.
+   */
+  private describeTransportFailure(err: unknown): string {
+    if (err instanceof Error && err.name === "AbortError") {
+      return `ollama did not respond within ${this.timeoutMs / 1000}s at ${this.baseUrl} — the model may still be loading into memory`;
+    }
+    const code = (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ECONNRESET") {
+      return `ollama is not reachable at ${this.baseUrl} — start it with: ollama serve`;
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    return `ollama request to ${this.baseUrl} failed: ${reason}`;
+  }
+
+  /**
+   * Models this ollama instance can serve right now.
+   *
+   * @returns tag names, e.g. `["llama3.2-vision:latest"]`; empty when the
+   *   daemon is unreachable — callers treat that as "cannot verify".
+   * @example
+   * const tags = await new OllamaProvider("gemma3:4b").installedModels();
+   */
+  async installedModels(): Promise<string[]> {
+    try {
+      const res = await this.fetchImpl(`${this.baseUrl}/api/tags`, {
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!res.ok) return [];
+      const body = (await res.json()) as { models?: Array<{ name?: unknown }> };
+      return (body.models ?? [])
+        .map((m) => m.name)
+        .filter((n): n is string => typeof n === "string");
+    } catch {
+      return [];
     }
   }
 }

@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Slider } from "@/components/ui/slider";
 import type { Settings } from "@/lib/types";
 
@@ -44,16 +45,20 @@ export default function TuningPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Tuning</h1>
-        <div className="flex items-center gap-3">
-          {status === "saved" && <Badge variant="success">saved</Badge>}
-          {status === "error" && <Badge variant="danger">error</Badge>}
-          <Button onClick={() => void save()} disabled={status === "saving"}>
-            {status === "saving" ? "Saving…" : "Apply"}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="WatchingEye · Policy"
+        title="Tuning"
+        lede="Thresholds the deterministic core reads on every frame. Changes take effect on apply — nothing here is inferred."
+        actions={
+          <>
+            {status === "saved" && <Badge variant="success">saved</Badge>}
+            {status === "error" && <Badge variant="danger">error</Badge>}
+            <Button onClick={() => void save()} disabled={status === "saving"}>
+              {status === "saving" ? "Saving…" : "Apply"}
+            </Button>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>

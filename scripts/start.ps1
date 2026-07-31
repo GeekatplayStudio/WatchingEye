@@ -106,12 +106,11 @@ Start-Service2 "orchestrator :8085" (Join-Path $root "services\agent-orchestrato
 Start-Service2 "gateway :8080" (Join-Path $root "apps\gateway") "npm run dev"
 Start-Service2 "dashboard :3000" (Join-Path $root "apps\dashboard") "npm run dev"
 
-# The vision model must be resident for classification to be fast.
-if (Get-Command ollama -ErrorAction SilentlyContinue) {
-    Write-Ok "ollama present (classification enabled)"
-} else {
-    Write-Warn2 "ollama not found - tracking works, classification will be refused"
-}
+# Classification needs the ollama daemon, not just the ollama binary. An
+# installed-but-not-running daemon is the usual cause of "every event
+# refused", so start it here rather than leaving it to chance.
+Write-Step "Checking the vision model daemon"
+& (Join-Path $PSScriptRoot "ensure-ollama.ps1")
 
 # --- Wait for the dashboard, then open it ---
 Write-Step "Waiting for the dashboard"

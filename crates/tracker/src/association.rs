@@ -48,6 +48,17 @@ pub struct Match {
     pub score: f32,
 }
 
+/// A track with estimated position and velocity for prediction.
+#[derive(Debug, Clone, Copy)]
+pub struct TrackState {
+    /// Bounding box of the track in sample coordinates.
+    pub bbox: BoundingBox,
+    /// Estimated horizontal velocity in samples per frame.
+    pub vx: f32,
+    /// Estimated vertical velocity in samples per frame.
+    pub vy: f32,
+}
+
 /// Greedily pair detections to tracks by descending `IoU`.
 ///
 /// Each detection and each track is used at most once. Pairs scoring below
@@ -55,10 +66,57 @@ pub struct Match {
 /// Deterministic: ties break toward the lower detection index.
 #[must_use]
 pub fn associate(detections: &[BoundingBox], tracks: &[BoundingBox], min_iou: f32) -> Vec<Match> {
+    let states: Vec<TrackState> = tracks
+        .iter()
+        .map(|&bbox| TrackState {
+            bbox,
+            vx: 0.0,
+            vy: 0.0,
+        })
+        .collect();
+    associate_predicted(detections, &states, min_iou)
+}
+
+/// Greedily pair detections to velocity-predicted tracks by `IoU` or proximity fallback.
+#[must_use]
+pub fn associate_predicted(
+    detections: &[BoundingBox],
+    tracks: &[TrackState],
+    min_iou: f32,
+) -> Vec<Match> {
     let mut candidates: Vec<Match> = Vec::new();
     for (di, d) in detections.iter().enumerate() {
+        let dc_x = d.x + d.width / 2.0;
+        let dc_y = d.y + d.height / 2.0;
+
         for (ti, t) in tracks.iter().enumerate() {
-            let score = iou(d, t);
+            let pred_box = BoundingBox {
+                x: t.bbox.x + t.vx,
+                y: t.bbox.y + t.vy,
+                width: t.bbox.width,
+                height: t.bbox.height,
+            };
+            let iou_score = iou(d, &pred_box);
+            let score = if iou_score >= min_iou {
+                iou_score
+            } else {
+                let tc_x = pred_box.x + pred_box.width / 2.0;
+                let tc_y = pred_box.y + pred_box.height / 2.0;
+                let dist = ((dc_x - tc_x).powi(2) + (dc_y - tc_y).powi(2)).sqrt();
+                let max_dim = d
+                    .width
+                    .max(d.height)
+                    .max(pred_box.width)
+                    .max(pred_box.height)
+                    .max(4.0);
+                let max_dist = max_dim * 1.5;
+                if dist <= max_dist {
+                    (1.0 - (dist / max_dist)) * min_iou
+                } else {
+                    0.0
+                }
+            };
+
             if score >= min_iou && score > 0.0 {
                 candidates.push(Match {
                     detection_index: di,
@@ -68,7 +126,7 @@ pub fn associate(detections: &[BoundingBox], tracks: &[BoundingBox], min_iou: f3
             }
         }
     }
-    // Highest score first; stable tie-break on indices keeps this deterministic.
+
     candidates.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
@@ -182,5 +240,18 @@ mod tests {
     fn empty_inputs_are_handled() {
         assert!(associate(&[], &[bbox(0.0, 0.0, 1.0, 1.0)], 0.1).is_empty());
         assert!(associate(&[bbox(0.0, 0.0, 1.0, 1.0)], &[], 0.1).is_empty());
+    }
+
+    #[test]
+    fn velocity_predicted_track_matches_displaced_detection() {
+        let track = TrackState {
+            bbox: bbox(0.0, 0.0, 10.0, 10.0),
+            vx: 5.0,
+            vy: 0.0,
+        };
+        let detection = bbox(5.0, 0.0, 10.0, 10.0);
+        let matches = associate_predicted(&[detection], &[track], 0.3);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].track_index, 0);
     }
 }

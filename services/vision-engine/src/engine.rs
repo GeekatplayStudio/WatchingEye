@@ -6,6 +6,7 @@
 
 use crate::api::FrameRequest;
 use crate::config::EngineConfig;
+use crate::pinned::{self, PinnedLock, PinnedStatus};
 use actuator::{Head, ServoCommand, Target};
 use camera::Frame;
 use chrono::Utc;
@@ -15,7 +16,7 @@ use schemas::detection::BoundingBox;
 use serde::Serialize;
 use spatial::motion::{describe, MotionVector};
 use std::collections::HashMap;
-use tracker::association::associate;
+use tracker::association::{associate_predicted, TrackState};
 use uuid::Uuid;
 
 // Thresholds live in `EngineConfig` so they can be tuned while watching the
@@ -66,6 +67,13 @@ pub struct FrameOutcome {
     pub servo: ServoCommand,
     /// Id of the region chosen as the aim point.
     pub target_id: Option<Uuid>,
+    /// Optional target point [x, y] in normalized coordinates [0.0, 1.0] for Point Cross Assign.
+    pub pinned_target: Option<[f32; 2]>,
+    /// Whether the Point Cross assignment is following a subject, holding at
+    /// the click point, or inactive.
+    pub pinned_status: PinnedStatus,
+    /// The track the assignment is following, when it has one.
+    pub pinned_track_id: Option<Uuid>,
 }
 
 /// Per-camera pipeline state.
@@ -77,20 +85,36 @@ struct CameraState {
     /// Flood-fill scratch, reused so blob extraction allocates nothing
     /// per frame after the first.
     scratch: BlobScratch,
+    /// Active Point Cross assignment, held across frames so the aim follows
+    /// the subject rather than the coordinate it was assigned at.
+    pinned: Option<PinnedLock>,
 }
 
-/// Choose what the head should aim at.
-///
-/// Confirmed subjects win over unconfirmed ones, then the largest, then the
-/// lowest id — deterministic, so the head does not flick between two equally
-/// good candidates from frame to frame.
-fn pick_target(tracks: &[TrackedRegion]) -> Option<&TrackedRegion> {
-    tracks.iter().max_by(|a, b| {
+/// Aim at a bare screen point, used while an assignment has nothing to
+/// follow. Holding the crosshair position is honest about the situation;
+/// silently falling back to some other subject would not be.
+fn point_target(point: [f32; 2]) -> Target {
+    Target {
+        x: (point[0] * 2.0 - 1.0).clamp(-1.0, 1.0),
+        y: (point[1] * 2.0 - 1.0).clamp(-1.0, 1.0),
+        area: 0.05,
+    }
+}
+
+/// Choose what the head should aim at when no assignment is active:
+/// confirmed subjects win over unconfirmed ones, then larger over smaller.
+fn pick_target(
+    tracks: &[TrackedRegion],
+    width: u32,
+    height: u32,
+) -> Option<(&TrackedRegion, Target)> {
+    let region = tracks.iter().max_by(|a, b| {
         a.gate_open
             .cmp(&b.gate_open)
             .then((a.bbox.width * a.bbox.height).total_cmp(&(b.bbox.width * b.bbox.height)))
             .then(b.id.cmp(&a.id))
-    })
+    })?;
+    Some((region, aim_point(region, width, height)))
 }
 
 /// Convert a region's centre into normalised aim coordinates.
@@ -110,6 +134,65 @@ fn aim_point(region: &TrackedRegion, width: u32, height: u32) -> Target {
     }
 }
 
+/// What the head was told to do this frame, and why.
+struct Aim {
+    target: Option<Target>,
+    target_id: Option<Uuid>,
+    pinned_status: PinnedStatus,
+    pinned_track_id: Option<Uuid>,
+}
+
+/// Decide what to aim at, advancing any Point Cross assignment first.
+///
+/// An active assignment always wins over automatic selection: the operator
+/// chose a subject, and quietly aiming somewhere else would make the
+/// crosshair a suggestion rather than an instruction.
+fn resolve_aim(
+    state: &mut CameraState,
+    point: Option<[f32; 2]>,
+    width: u32,
+    height: u32,
+    trace: &mut Vec<String>,
+) -> Aim {
+    let pinned_status = pinned::update(&mut state.pinned, point, &state.tracks, width, height);
+    let pinned_track_id = state.pinned.and_then(|l| l.track_id);
+
+    let (target, target_id) = match pinned_status {
+        // `Following` guarantees the id resolved against this frame's tracks.
+        PinnedStatus::Following => pinned_track_id
+            .and_then(|id| state.tracks.iter().find(|r| r.id == id))
+            .map_or((None, None), |r| {
+                (Some(aim_point(r, width, height)), Some(r.id))
+            }),
+        PinnedStatus::Searching => (point.map(point_target), None),
+        PinnedStatus::Idle => match pick_target(&state.tracks, width, height) {
+            Some((region, aim)) => (Some(aim), Some(region.id)),
+            None => (None, None),
+        },
+    };
+
+    match pinned_status {
+        PinnedStatus::Following => {
+            let short: String = pinned_track_id.map_or_else(
+                || "?".to_owned(),
+                |id| id.to_string().chars().take(8).collect(),
+            );
+            trace.push(format!("point_cross_assign: FOLLOWING track {short}"));
+        }
+        PinnedStatus::Searching => {
+            trace.push("point_cross_assign: SEARCHING (holding at the assigned point)".to_owned());
+        }
+        PinnedStatus::Idle => {}
+    }
+
+    Aim {
+        target,
+        target_id,
+        pinned_status,
+        pinned_track_id,
+    }
+}
+
 /// Build the outcome for a frame that never made it through a stage.
 ///
 /// The head is still commanded — a bad frame must not leave the servo loop
@@ -126,6 +209,9 @@ fn rejected(frame_no: u64, servo: ServoCommand, reason: String, stage: &str) -> 
         target: None,
         servo,
         target_id: None,
+        pinned_target: None,
+        pinned_status: PinnedStatus::Idle,
+        pinned_track_id: None,
     }
 }
 
@@ -197,6 +283,7 @@ impl Engine {
                 frame: 0,
                 head: Head::default(),
                 scratch: BlobScratch::default(),
+                pinned: None,
             });
         state.frame += 1;
         let frame_no = state.frame;
@@ -260,13 +347,8 @@ impl Engine {
             config.gate_frames
         ));
 
-        let (target, target_id) = match pick_target(&state.tracks) {
-            Some(region) => (
-                Some(aim_point(region, req.width, req.height)),
-                Some(region.id),
-            ),
-            None => (None, None),
-        };
+        let aim = resolve_aim(state, req.pinned_target, req.width, req.height, &mut trace);
+        let target = aim.target;
         let servo = state.head.update(target, dt);
         trace.push(format!(
             "aim: {} -> pan {:.0}° tilt {:.0}° ({})",
@@ -289,7 +371,10 @@ impl Engine {
             trace,
             target,
             servo,
-            target_id,
+            target_id: aim.target_id,
+            pinned_target: req.pinned_target,
+            pinned_status: aim.pinned_status,
+            pinned_track_id: aim.pinned_track_id,
         }
     }
 }
@@ -302,8 +387,16 @@ fn update_tracks(
     frame_width: u32,
     fps: f32,
 ) -> Vec<Uuid> {
-    let existing: Vec<BoundingBox> = state.tracks.iter().map(|t| t.bbox).collect();
-    let matches = associate(regions, &existing, config.min_track_iou);
+    let existing_states: Vec<TrackState> = state
+        .tracks
+        .iter()
+        .map(|t| TrackState {
+            bbox: t.bbox,
+            vx: t.vx,
+            vy: t.vy,
+        })
+        .collect();
+    let matches = associate_predicted(regions, &existing_states, config.min_track_iou);
 
     let mut matched_regions = vec![false; regions.len()];
     let mut matched_tracks = vec![false; state.tracks.len()];
@@ -387,6 +480,7 @@ mod tests {
             height: 20,
             samples,
             dt_secs: Some(0.1),
+            pinned_target: None,
         }
     }
 
@@ -399,6 +493,7 @@ mod tests {
             height: 20,
             samples: vec![0; 7],
             dt_secs: Some(0.1),
+            pinned_target: None,
         });
         assert!(out.rejected_reason.is_some());
         assert_eq!(out.trace, vec!["frame_validator: REJECT"]);
@@ -551,6 +646,7 @@ mod tests {
             height: 20,
             samples: vec![0; 3],
             dt_secs: Some(0.1),
+            pinned_target: None,
         });
         assert!(out.rejected_reason.is_some());
         assert!(!out.servo.tracking);
@@ -611,8 +707,20 @@ mod tests {
             height: 20,
             samples: vec![10; 400],
             dt_secs: Some(0.1),
+            pinned_target: None,
         };
         let out = e.process(other);
         assert_eq!(out.frame, 1, "a second camera starts its own frame count");
+    }
+
+    #[test]
+    fn pinned_target_locks_aim_to_specified_point() {
+        let mut e = Engine::new();
+        e.process(req(vec![10; 400]));
+        let mut req_pinned = req(frame_with_square(2, 5, 6));
+        req_pinned.pinned_target = Some([0.75, 0.25]);
+        let out = e.process(req_pinned);
+        assert_eq!(out.pinned_target, Some([0.75, 0.25]));
+        assert!(out.trace.iter().any(|t| t.contains("point_cross_assign")));
     }
 }

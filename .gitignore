@@ -9,3 +9,6 @@ models/
 
 .next/
 .runtime/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

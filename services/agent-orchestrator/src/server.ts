@@ -14,6 +14,8 @@ import { extractDescriptors, makeVlmAnalyzer } from "./vlm.js";
 import { identify, type IdentificationOutcome } from "./identity.js";
 import { detect, modelAvailable } from "./detect.js";
 import { TriggerEventSchema } from "./schema.js";
+import { parseNaturalLanguageIntent } from "./nl-parser.js";
+import { resolveVlmModel, type ModelResolution } from "./vlm-model.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
@@ -25,15 +27,47 @@ interface ClassifyBody {
 /** Build the service. `provider` is injectable for tests. */
 export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
-  const model = process.env.VLM_MODEL ?? "qwen2.5vl:7b";
 
-  app.get("/health", async () => ({
-    status: "ok",
-    service: "agent-orchestrator",
-    model,
-    provider: provider?.name ?? "ollama",
-    detector: modelAvailable() ? "yolo11n-onnx" : "unavailable",
-  }));
+  // Resolved once, on first use, then reused: asking the daemon which
+  // models exist on every frame would add a round trip to the hot path.
+  let resolution: Promise<ModelResolution> | undefined;
+  const vlmModel = async (): Promise<ModelResolution> => {
+    if (resolution === undefined) {
+      resolution = new OllamaProvider("")
+        .installedModels()
+        .then((installed) => {
+          const r = resolveVlmModel(installed, process.env.VLM_MODEL);
+          if (!r.installed) {
+            app.log.error({ model: r.model, hint: r.hint }, "vision model unavailable");
+          } else {
+            app.log.info({ model: r.model, source: r.source }, "vision model resolved");
+          }
+          return r;
+        });
+    }
+    return resolution;
+  };
+
+  app.get("/health", async () => {
+    const vlm = await vlmModel();
+    return {
+      status: "ok",
+      service: "agent-orchestrator",
+      model: vlm.model,
+      vlm,
+      provider: provider?.name ?? "ollama",
+      detector: modelAvailable() ? "yolo11n-onnx" : "unavailable",
+    };
+  });
+
+  /** Parse natural language tracking commands into target config. */
+  app.post("/parse-intent", async (req, reply) => {
+    const body = req.body as { prompt?: string };
+    if (typeof body?.prompt !== "string" || body.prompt.trim() === "") {
+      return reply.status(400).send({ error: "prompt string is required" });
+    }
+    return parseNaturalLanguageIntent(body.prompt);
+  });
 
   /**
    * Full-frame object detection, independent of motion. This is the path
@@ -80,7 +114,23 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
       };
     }
 
-    const backend = provider ?? new OllamaProvider(model);
+    let backend = provider;
+    if (backend === undefined) {
+      const vlm = await vlmModel();
+      // A model that is not installed cannot become one by being asked. Say
+      // what to run instead of failing per-frame with a transport error.
+      if (!vlm.installed) {
+        return {
+          outcome: "safe_default",
+          decision: null,
+          identity: null,
+          rejectionReason: `vision model "${vlm.model}" unavailable — ${vlm.hint ?? "check ollama"}`,
+          rawAnalysis: "",
+          latencyMs: 0,
+        };
+      }
+      backend = new OllamaProvider(vlm.model);
+    }
     const graph = buildAgentGraph(makeVlmAnalyzer(backend, body.image ?? ""));
 
     const started = Date.now();

@@ -5,15 +5,18 @@
  */
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Mic, Volume2 } from "lucide-react";
 
 export default function VoicePage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Voice</h1>
-        <Badge variant="warning">planned — see roadmap</Badge>
-      </div>
+      <PageHeader
+        eyebrow="WatchingEye · Voice module"
+        title="Voice"
+        lede="Two-way voice: local speech recognition in, validated spoken decisions out. Both directions pass the same guardrails as vision."
+        actions={<Badge variant="warning">planned — see roadmap</Badge>}
+      />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

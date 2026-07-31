@@ -6,7 +6,7 @@ import type { Health } from "@/lib/use-service-status";
 import { cn } from "@/lib/utils";
 
 const DOT: Record<Health, string> = {
-  up: "bg-primary",
+  up: "bg-primary shadow-[0_0_6px_var(--color-primary)]",
   down: "bg-danger",
   unknown: "bg-muted-foreground",
 };
@@ -32,9 +32,9 @@ export function StatusChip({
   return (
     <span
       title={`${name}: ${LABEL[health]}${detail !== undefined ? ` (${detail})` : ""}`}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs"
+      className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-card px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.12em]"
     >
-      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+      <Icon className="h-3 w-3 text-muted-foreground" />
       <span className="text-muted-foreground">{name}</span>
       <span className={cn("h-1.5 w-1.5 rounded-full", DOT[health])} />
     </span>
@@ -63,7 +63,7 @@ export function IconAction({
       title={label}
       aria-label={label}
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs transition-colors disabled:opacity-40",
+        "inline-flex h-7 items-center gap-1.5 rounded-sm border border-border px-2 font-mono text-[0.65rem] uppercase tracking-[0.12em] transition-colors disabled:opacity-40",
         tone === "primary" && "border-primary/40 text-primary hover:bg-primary/10",
         tone === "danger" && "border-danger/40 text-danger hover:bg-danger/10",
         tone === "default" && "text-muted-foreground hover:bg-muted hover:text-foreground",

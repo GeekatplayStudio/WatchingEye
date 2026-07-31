@@ -5,8 +5,9 @@
  * detection feed with per-event evidence (zero-black-box view).
  */
 import { useQuery } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader, SectionHeading, StatStrip, type Stat } from "@/components/ui/page-header";
 import { EventCard } from "@/components/event-card";
 import { useLiveEvents } from "@/lib/use-live-events";
 import type { Camera } from "@/lib/types";
@@ -23,53 +24,85 @@ export default function MonitorPage() {
     },
   });
 
+  const list = cameras.data?.cameras ?? [];
+  const refused = events.filter((e) => e.rejectedReason !== undefined).length;
+  const stats: Stat[] = [
+    { label: "Events", value: events.length, suffix: "this session" },
+    { label: "Cameras", value: list.length, suffix: "registered" },
+    { label: "Refused", value: refused, suffix: "by guardrails", tone: refused > 0 ? "warn" : "good" },
+    {
+      label: "Gateway",
+      value: connected ? "live" : "offline",
+      tone: connected ? "good" : "bad",
+    },
+  ];
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Live Monitor</h1>
-        <Badge variant={connected ? "success" : "danger"}>
-          {connected ? "● live" : "○ disconnected"}
-        </Badge>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-8">
+      <PageHeader
+        eyebrow={`WatchingEye · Live monitor · ${new Date().toLocaleDateString()}`}
+        title="Detection feed"
+        lede="Every event below carries the evidence that produced it — the claimed class, the frames it was seen in, and the model that spoke. Nothing reaches this list without passing guardrails."
+        actions={
+          <StatusBadge variant={connected ? "success" : "danger"} filled={connected}>
+            {connected ? "live" : "disconnected"}
+          </StatusBadge>
+        }
+      />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {(cameras.data?.cameras ?? []).map((cam) => (
-          <Card key={cam.id}>
-            <CardContent className="p-4">
-              <div className="flex aspect-video items-center justify-center rounded-md bg-muted">
-                <Video className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-sm font-medium">{cam.location}</span>
-                <Badge variant="outline">{cam.kind}</Badge>
-              </div>
+      <StatStrip stats={stats} />
+
+      <section className="space-y-3">
+        <SectionHeading
+          title="Cameras"
+          tag="registered"
+          note={`${list.length} source${list.length === 1 ? "" : "s"}`}
+        />
+        {cameras.isError ? (
+          <Card>
+            <CardContent className="font-mono text-xs text-danger">
+              Gateway unreachable — start it with <span className="tok">scripts/run gateway</span>.
             </CardContent>
           </Card>
-        ))}
-        {cameras.isError && (
-          <Card className="sm:col-span-3">
-            <CardContent className="p-4 text-sm text-danger">
-              Gateway unreachable — start it with <code>scripts/run gateway</code>.
-            </CardContent>
-          </Card>
+        ) : list.length === 0 ? (
+          <p className="font-mono text-xs text-muted-foreground">No cameras registered yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {list.map((cam) => (
+              <Card key={cam.id}>
+                <CardContent className="space-y-2 p-3">
+                  <div className="flex aspect-video items-center justify-center rounded-sm border border-border bg-muted/40">
+                    <Video className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium">{cam.location}</span>
+                    <Badge variant="outline">{cam.kind}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
-      </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Detection Feed</CardTitle>
-        </CardHeader>
-        <CardContent className="max-h-[32rem] space-y-3 overflow-y-auto">
-          {events.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Waiting for events… (the gateway demo stream emits every few seconds)
-            </p>
-          )}
-          {events.map((e) => (
-            <EventCard key={e.id} event={e} />
-          ))}
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <SectionHeading
+          title="Event stream"
+          tag="ws · /ws"
+          note={`${events.length} held in view`}
+        />
+        <Card>
+          <div className="row-list max-h-[32rem] overflow-y-auto">
+            {events.length === 0 ? (
+              <p className="px-4 py-6 font-mono text-xs text-muted-foreground">
+                Waiting for events…
+              </p>
+            ) : (
+              events.map((e) => <EventCard key={e.id} event={e} />)
+            )}
+          </div>
+        </Card>
+      </section>
     </div>
   );
 }

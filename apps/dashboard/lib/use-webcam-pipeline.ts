@@ -73,7 +73,19 @@ export interface FrameOutcome {
   target: AimTarget | null;
   servo: ServoCommand;
   target_id: string | null;
+  pinned_target: [number, number] | null;
+  /** Whether a Point Cross assignment is following, holding, or inactive. */
+  pinned_status: PinnedStatus;
+  /** The track the assignment is following, when it has one. */
+  pinned_track_id: string | null;
 }
+
+/**
+ * State of a Point Cross assignment. `following` means the engine has locked
+ * onto the subject that was clicked and is tracking it as it moves;
+ * `searching` means the assignment stands but nothing is there to follow.
+ */
+export type PinnedStatus = "idle" | "following" | "searching";
 
 /** A camera the browser can see. */
 export interface CameraDevice {
@@ -141,6 +153,8 @@ interface PipelineState {
   detectLatencyMs: number;
   /** Set when the detector cannot run (e.g. model missing). */
   detectError: string | null;
+  /** Active Point Cross Assign target position (normalized 0..1). */
+  pinnedTarget: { x: number; y: number } | null;
 }
 
 /**
@@ -164,6 +178,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
     detections: [],
     detectLatencyMs: 0,
     detectError: null,
+    pinnedTarget: null,
   });
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -172,6 +187,17 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
   const framesRef = useRef<number[]>([]);
   const lastFrameAtRef = useRef(0);
   const classifiedRef = useRef<Set<string>>(new Set());
+  const pinnedTargetRef = useRef<{ x: number; y: number } | null>(null);
+
+  const setPinnedTarget = useCallback((pt: { x: number; y: number } | null) => {
+    pinnedTargetRef.current = pt;
+    setState((s) => ({ ...s, pinnedTarget: pt }));
+  }, []);
+
+  const clearPinnedTarget = useCallback(() => {
+    pinnedTargetRef.current = null;
+    setState((s) => ({ ...s, pinnedTarget: null }));
+  }, []);
 
   const scan = useCallback(async () => {
     setState((s) => ({ ...s, scanning: true, error: null }));
@@ -261,6 +287,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
       const dtSecs = lastFrameAtRef.current === 0 ? 0.1 : (sentAt - lastFrameAtRef.current) / 1000;
       lastFrameAtRef.current = sentAt;
       try {
+        const pt = pinnedTargetRef.current;
         const res = await fetch("/engine/api/frame", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -270,6 +297,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
             height: GRID_HEIGHT,
             samples,
             dt_secs: dtSecs,
+            pinned_target: pt ? [pt.x, pt.y] : null,
           }),
         });
         if (!res.ok) throw new Error(`engine ${res.status}`);
@@ -459,5 +487,14 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
 
   useEffect(() => () => disconnect(), [disconnect]);
 
-  return { ...state, scan, connect, disconnect, gridWidth: GRID_WIDTH, gridHeight: GRID_HEIGHT };
+  return {
+    ...state,
+    scan,
+    connect,
+    disconnect,
+    setPinnedTarget,
+    clearPinnedTarget,
+    gridWidth: GRID_WIDTH,
+    gridHeight: GRID_HEIGHT,
+  };
 }
