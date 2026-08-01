@@ -47,6 +47,9 @@ import {
   type OpenVocabHit,
   type OpenVocabScorer,
 } from "./open-vocab.js";
+import { resolveVoiceCommand } from "./voice-command.js";
+import type { SpeechRecognizer } from "./voice.js";
+import { createSpeechRecognizer, WhisperUnavailableError } from "./whisper.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
@@ -65,6 +68,7 @@ export function buildOrchestrator(
   openVocabScorer?: OpenVocabScorer,
   clipEmbedder?: ClipEmbedder,
   attrEmbedder?: AttrEmbedder,
+  speechRecognizer?: SpeechRecognizer,
 ): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const ocr = ocrProvider ?? createDefaultOcrProvider();
@@ -72,6 +76,7 @@ export function buildOrchestrator(
   const openVocab = openVocabScorer ?? createDefaultOpenVocabScorer();
   const clipEmbed = clipEmbedder ?? createDefaultClipEmbedder();
   const attrEmbed = attrEmbedder ?? createDefaultAttrEmbedder();
+  const speech = speechRecognizer ?? createSpeechRecognizer();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -107,7 +112,41 @@ export function buildOrchestrator(
       ocr: ocr.name,
       clipEmbed: clipEmbed.name,
       attrEmbed: attrEmbed.name,
+      whisper: speech.name,
     };
+  });
+
+  /**
+   * Speech → closed VoiceCommand. Transcript is untrusted; rule parse only.
+   * Body: `{ transcript? }` and/or `{ audioBase64?, mimeType? }`.
+   */
+  app.post("/voice/command", async (req, reply) => {
+    const body = req.body as {
+      transcript?: string;
+      audioBase64?: string;
+      mimeType?: string;
+    };
+    try {
+      const result = await resolveVoiceCommand({
+        transcript: body.transcript,
+        audioBase64: body.audioBase64,
+        mimeType: body.mimeType,
+        recognizer: speech,
+      });
+      if (result.outcome === "rejected" && result.transcript === "") {
+        return reply.status(400).send(result);
+      }
+      return result;
+    } catch (err) {
+      if (err instanceof WhisperUnavailableError) {
+        return reply.status(503).send({
+          error: "whisper unavailable",
+          detail: err.message,
+          hint: "set WATCHINGEYE_WHISPER=stub or install whisper-cli + ggml model",
+        });
+      }
+      throw err;
+    }
   });
 
   /** Parse natural language tracking commands into target config. */

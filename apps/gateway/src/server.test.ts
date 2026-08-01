@@ -38,6 +38,32 @@ function decisionResult(objectClass: string): ClassifyResult {
 }
 
 describe("gateway server", () => {
+  it("proxies voice commands without interpreting them", async () => {
+    const app = await buildServer({
+      voiceCommand: async (body) => ({
+        outcome: "command",
+        transcript: body.transcript,
+        command: { intent: "status" },
+        stt: { model: "stub" },
+        latencyMs: 1,
+      }),
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/voice/command",
+      payload: { transcript: "system status" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().command.intent).toBe("status");
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/voice/command",
+      payload: {},
+    });
+    expect(missing.statusCode).toBe(400);
+    await app.close();
+  });
+
   it("reports healthy", async () => {
     const app = await buildServer();
     const res = await app.inject({ method: "GET", url: "/health" });

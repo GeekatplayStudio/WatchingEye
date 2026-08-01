@@ -20,7 +20,7 @@ done (exceptions require an ADR).
 | Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (best ~3.9 s `llava`) |
 | Phase 3 Multi-cam / edge | **3.2–3.5** ✅ (ESP32 firmware pending hardware); MCP Camera/Timeline/Alert ✅ |
 | Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
-| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice contracts only) |
+| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; V.1 STT+parse partial; Piper open) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
 Durable multi-cam config + 4 synthetic pumps proven; live IP farms, firmware,
@@ -37,7 +37,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 | P2 | **3.2** edge offline cache | Pi CI + SQLite gate-open cache + hub sync ✅; not a live-Pi smoke |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
 | P2 | **3.4** Split MCP | Camera / Timeline / Alert bins + client demo ✅ (read-only; no actuation) |
-| P2 | **V.1 / V.2** Voice | Schemas/tests only; no Whisper/Piper live loop |
+| P2 | **V.1 / V.2** Voice | V.1 STT→parse ✅ (stub/cli); audio-event + Piper/V.2 open |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
@@ -282,9 +282,14 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
 
 ## Phase 4.5 — Voice Module
 
-### Step V.1 — Speech recognition (contracts only)
+### Step V.1 — Speech recognition (partial)
 - [x] `VoiceCommand` schema + reject-unknown parse (tested)
-- [ ] Whisper binding; guardrail routing; audio-event detection
+- [x] Whisper/stub `SpeechRecognizer`; transcribe → `parseTranscript` route —
+      orchestrator `POST /voice/command` + gateway `POST /api/voice/command`
+      (proxy only); `WATCHINGEYE_WHISPER=stub|auto|cli`; whisper.cpp CLI when
+      `whisper-cli` + `models/voice/ggml-base.en.bin` present; Voice page
+      transcript/upload panel; unknown phrases rejected (no LLM intent)
+- [ ] Audio-event detection (glass-break / bark / etc.)
 
 ### Step V.2 — Voice response (contracts only)
 - [x] `renderSpeech` from validated facts only (tested)
@@ -392,8 +397,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 25. ~~**6.3 attr vectors** — `attr_embedding` bank text alongside appearance~~ ✅
 26. ~~**edge offline cache** — SQLite + hub sync (gate-open metadata)~~ ✅
 27. ~~**3.4 Split MCP** — Camera / Timeline / Alert + client demo~~ ✅
-28. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
-29. **2.1 Rust LLM provider** / **V.1 Whisper** — next software cliffs after hardware wait
+28. ~~**V.1 Whisper STT → parse** — stub/cli + gateway proxy + Voice panel~~ ✅ (audio-events still open)
+29. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
+30. **2.1 Rust LLM provider** / **V.2 Piper** / **V.1 audio-events** — next cliffs
 
 ---
 

@@ -26,10 +26,14 @@ export class VoiceParseError extends Error {
   }
 }
 
-/** Speech-to-text backend (Whisper in production). */
+/** Speech-to-text backend (Whisper in production; stub in CI). */
 export interface SpeechRecognizer {
+  /** Backend id for provenance (`stub` / `whisper-cli`). */
+  readonly name: string;
   /** Transcribe 16 kHz mono PCM audio. */
   transcribe(audio: Float32Array): Promise<string>;
+  /** Transcribe uploaded file bytes (wav/webm). */
+  transcribeFile(bytes: Uint8Array, mimeType?: string): Promise<string>;
 }
 
 /** Text-to-speech backend (Piper in production). */

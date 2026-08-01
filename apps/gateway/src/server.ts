@@ -10,6 +10,7 @@
  * - `GET  /api/settings` / `PUT /api/settings` — tuning knobs
  * - `POST /api/classify` — classify a gated event (proxied to orchestrator)
  * - `POST /api/edge/sync` — AI-free ingest of edge-node offline cache drains
+ * - `POST /api/voice/command` — proxy STT→parse to orchestrator (no AI here)
  * - `GET  /ws` — live event stream
  */
 import Fastify, { type FastifyInstance } from "fastify";
@@ -66,6 +67,15 @@ export interface ServerOptions {
    * Use `memory` in tests; default is `data/events.sqlite` (or Vitest → memory).
    */
   eventsDbPath?: string;
+  /**
+   * Injectable voice-command handler (orchestrator `/voice/command` proxy).
+   * Tests supply a fixed parse result; production relays bytes/text only.
+   */
+  voiceCommand?: (body: {
+    transcript?: string;
+    audioBase64?: string;
+    mimeType?: string;
+  }) => Promise<unknown>;
 }
 
 /** Body of a classification request from the dashboard. */
@@ -224,6 +234,30 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   const textEmbedder = opts.textEmbedder ?? defaultTextEmbedder;
   const clipEmbedder = opts.clipEmbedder ?? defaultClipEmbedder;
   const attrEmbedder = opts.attrEmbedder ?? defaultAttrEmbedder;
+  const voiceCommand =
+    opts.voiceCommand ??
+    (async (body: { transcript?: string; audioBase64?: string; mimeType?: string }) => {
+      const res = await fetch(
+        `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/voice/command`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(60_000),
+        },
+      );
+      const json = (await res.json()) as unknown;
+      if (!res.ok) {
+        const err = new Error("voice command proxy failed") as Error & {
+          status: number;
+          body: unknown;
+        };
+        err.status = res.status;
+        err.body = json;
+        throw err;
+      }
+      return json;
+    });
   let settings: Settings = { ...DEFAULT_SETTINGS };
   const sockets = new Set<{ send: (data: string) => void }>();
   /** Cameras become known when they send frames — nothing is pre-registered. */
@@ -372,6 +406,35 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         return reply.status(400).send({ error: err.message });
       }
       throw err;
+    }
+  });
+
+  /**
+   * Voice command proxy — relays transcript/audio to the orchestrator.
+   * No STT or intent logic here (AI-free gateway).
+   */
+  app.post("/api/voice/command", async (req, reply) => {
+    const body = req.body as {
+      transcript?: string;
+      audioBase64?: string;
+      mimeType?: string;
+    };
+    const hasText = typeof body?.transcript === "string" && body.transcript.trim() !== "";
+    const hasAudio = typeof body?.audioBase64 === "string" && body.audioBase64.length > 0;
+    if (!hasText && !hasAudio) {
+      return reply.status(400).send({ error: "transcript or audioBase64 is required" });
+    }
+    try {
+      return await voiceCommand({
+        ...(hasText ? { transcript: body.transcript } : {}),
+        ...(hasAudio ? { audioBase64: body.audioBase64, mimeType: body.mimeType } : {}),
+      });
+    } catch (err) {
+      const e = err as Error & { status?: number; body?: unknown };
+      if (typeof e.status === "number") {
+        return reply.status(e.status).send(e.body ?? { error: e.message });
+      }
+      return reply.status(502).send({ error: "voice command unavailable", detail: e.message });
     }
   });
 
