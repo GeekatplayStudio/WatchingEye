@@ -277,9 +277,12 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 - [ ] Text-embedding / CLIP multimodal semantic search
 - Note: keyword + appearance-NN (`/similar`) only; no text vector column yet.
 
-### Step 6.5 — Live active tracking monitor (partial)
+### Step 6.5 — Live active tracking monitor ✅
 - [x] Active tracking panel on console (NL quick-add → settings)
-- [ ] Live dataset count; intent-driven monitoring metrics
+- [x] Live dataset count; intent-driven monitoring metrics —
+      `GET /api/dataset/stats` (`DatasetStoreLike.count`); panel badge
+      `dataset N` + session row `matched · filtered · plates · seen`
+      from WS events scoped to active intent / tracked classes
 
 ---
 
@@ -295,8 +298,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP / text RAG still open)
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅ (CLIP breed/color + Paddle still open)
 10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
-11. **6.5** — live dataset count / intent metrics ← **next**
-12. **2.1c remaining** — text embedding semantic retriever
+11. ~~**6.5** — live dataset count / intent metrics~~ ✅
+12. **2.1c remaining** — text embedding semantic retriever ← **next**
 13. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
 14. **2.2 latency** — GPU benchmark when hardware is available
 15. **6.2 remaining** — CLIP attrs / Paddle-LPR when needed

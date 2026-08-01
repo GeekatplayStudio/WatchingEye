@@ -8,7 +8,7 @@
  * Recall queries `GET /api/dataset/recall` and surfaces answer + citations +
  * evidence quotes (zero black box).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Search, Sparkles, Database, Plus, Check } from "lucide-react";
@@ -51,6 +51,16 @@ interface GroundedRecall {
   until?: string;
 }
 
+interface LiveEventLite {
+  id: string;
+  class: string;
+  filtered?: boolean;
+  evidence?: Array<{ label: string }>;
+  descriptors?: Array<{ key: string; value: string }>;
+}
+
+const MAX_LIVE = 100;
+
 export function ActiveTrackingPanel({
   activeClasses: initialClasses,
 }: {
@@ -67,10 +77,21 @@ export function ActiveTrackingPanel({
   const [intent, setIntent] = useState<ActiveIntent | null>(null);
   const [lastBroadcastMs, setLastBroadcastMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [datasetTotal, setDatasetTotal] = useState<number | null>(null);
+  const [liveEvents, setLiveEvents] = useState<LiveEventLite[]>([]);
 
   const applySettings = useCallback((s: SettingsSnapshot) => {
     setActiveClasses(s.trackedClasses);
     setIntent(s.activeIntent);
+  }, []);
+
+  const refreshStats = useCallback(() => {
+    void fetch("/api/dataset/stats")
+      .then((r) => r.json() as Promise<{ total?: number }>)
+      .then((body) => {
+        if (typeof body.total === "number") setDatasetTotal(body.total);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -79,6 +100,12 @@ export function ActiveTrackingPanel({
       .then(applySettings)
       .catch(() => undefined);
   }, [applySettings]);
+
+  useEffect(() => {
+    refreshStats();
+    const timer = setInterval(refreshStats, 8_000);
+    return () => clearInterval(timer);
+  }, [refreshStats]);
 
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -91,16 +118,42 @@ export function ActiveTrackingPanel({
     }
     ws.onmessage = (ev) => {
       try {
-        const msg = JSON.parse(String(ev.data)) as { type?: string; settings?: SettingsSnapshot };
+        const msg = JSON.parse(String(ev.data)) as {
+          type?: string;
+          settings?: SettingsSnapshot;
+          event?: LiveEventLite;
+        };
         if (msg.type === "settings" && msg.settings !== undefined) {
           applySettings(msg.settings);
+        } else if (msg.type === "event" && msg.event !== undefined) {
+          setLiveEvents((prev) => [msg.event!, ...prev].slice(0, MAX_LIVE));
+          refreshStats();
         }
       } catch {
         // ignore non-JSON
       }
     };
     return () => ws.close();
-  }, [applySettings]);
+  }, [applySettings, refreshStats]);
+
+  const intentMetrics = useMemo(() => {
+    const targets =
+      intent !== null && intent.targetClasses.length > 0
+        ? new Set(intent.targetClasses)
+        : new Set(activeClasses);
+    let matched = 0;
+    let filtered = 0;
+    let plates = 0;
+    for (const e of liveEvents) {
+      if (e.filtered === true) filtered += 1;
+      if (targets.has(e.class) && e.filtered !== true) matched += 1;
+      const hasPlate =
+        e.evidence?.some((x) => x.label.startsWith("plate:")) === true ||
+        e.descriptors?.some((d) => d.key === "license_plate") === true;
+      if (hasPlate) plates += 1;
+    }
+    return { matched, filtered, plates, seen: liveEvents.length };
+  }, [liveEvents, intent, activeClasses]);
 
   const handleRegister = async (text: string) => {
     if (!text.trim() || submitting) return;
@@ -156,16 +209,23 @@ export function ActiveTrackingPanel({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 shadow-xs">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
           <Sparkles className="h-4 w-4 text-primary" />
           Natural Language Target Registration
         </h3>
-        {lastBroadcastMs !== null && (
-          <Badge variant="outline" className="font-mono text-[10px]">
-            broadcast {lastBroadcastMs} ms
-          </Badge>
-        )}
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          {datasetTotal !== null && (
+            <Badge variant="outline" className="font-mono text-[10px]">
+              dataset {datasetTotal}
+            </Badge>
+          )}
+          {lastBroadcastMs !== null && (
+            <Badge variant="outline" className="font-mono text-[10px]">
+              broadcast {lastBroadcastMs} ms
+            </Badge>
+          )}
+        </div>
       </div>
 
       <form
@@ -222,6 +282,18 @@ export function ActiveTrackingPanel({
           {intent.attributes.length > 0 ? ` · ${intent.attributes.join(", ")}` : ""}
         </p>
       )}
+
+      <p className="font-mono text-[11px] text-muted-foreground">
+        Session metrics:{" "}
+        <span className="text-foreground">matched {intentMetrics.matched}</span>
+        {" · "}
+        filtered {intentMetrics.filtered}
+        {" · "}
+        plates {intentMetrics.plates}
+        {" · "}
+        seen {intentMetrics.seen}
+        {datasetTotal !== null ? ` · store ${datasetTotal}` : ""}
+      </p>
 
       <div className="flex flex-wrap items-center gap-1 border-t border-border pt-2 text-xs">
         <span className="text-[11px] font-medium text-muted-foreground">Active Monitored Targets:</span>

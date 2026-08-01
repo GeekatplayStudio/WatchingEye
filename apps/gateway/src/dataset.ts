@@ -48,6 +48,8 @@ export interface DatasetStoreLike {
   /** Cosine nearest neighbours; empty when no vectors are stored. */
   searchByEmbedding(embedding: number[], limit?: number): Promise<DatasetRecord[]>;
   getAll(limit?: number): Promise<DatasetRecord[]>;
+  /** Total enrolled records (for live monitor metrics). */
+  count(): Promise<number>;
   clear(): Promise<void> | void;
   close?(): Promise<void>;
 }
@@ -116,6 +118,10 @@ export class DatasetStore implements DatasetStoreLike {
 
   public async getAll(limit = 50): Promise<DatasetRecord[]> {
     return this.records.slice(0, limit);
+  }
+
+  public async count(): Promise<number> {
+    return this.records.length;
   }
 
   /** Test helper — empty the in-memory store between cases. */

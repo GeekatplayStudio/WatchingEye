@@ -256,6 +256,10 @@ describe("activeIntent pipeline gating", () => {
     expect(search.json().records[0].embedding).toHaveLength(384);
     expect(search.json().records[0].provenance.embed_model).toBe("dinov2-vits14-onnx");
 
+    const stats = await app.inject({ method: "GET", url: "/api/dataset/stats" });
+    expect(stats.statusCode).toBe(200);
+    expect(stats.json().total).toBeGreaterThan(0);
+
     const similar = await app.inject({
       method: "POST",
       url: "/api/dataset/similar",

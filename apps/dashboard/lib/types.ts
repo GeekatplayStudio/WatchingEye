@@ -68,6 +68,16 @@ export interface Settings {
   gateConsecutiveFrames: number;
   policyMinConfidence: number;
   allowedActions: string[];
+  trackedClasses?: string[];
+  activeIntent?: {
+    rawPrompt: string;
+    targetClasses: string[];
+    attributes: string[];
+    actionPolicy: string;
+    datasetEnroll: boolean;
+    anprEnabled: boolean;
+    appliedAt: string;
+  } | null;
 }
 
 export interface Camera {

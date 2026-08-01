@@ -196,6 +196,12 @@ export class PgDatasetStore implements DatasetStoreLike {
     return res.rows.map(rowToRecord);
   }
 
+  async count(): Promise<number> {
+    const res = await this.pool.query(`SELECT COUNT(*)::int AS n FROM dataset_events`);
+    const row = res.rows[0] as { n: number } | undefined;
+    return row?.n ?? 0;
+  }
+
   async clear(): Promise<void> {
     await this.pool.query(`DELETE FROM dataset_events`);
   }

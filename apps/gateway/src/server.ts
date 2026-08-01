@@ -289,6 +289,12 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     return { records };
   });
 
+  /** Live store size for the Active Tracking monitor. */
+  app.get("/api/dataset/stats", async () => {
+    const total = await datasetStore.count();
+    return { total };
+  });
+
   /**
    * Grounded NL recall: multi-term keyword + optional yesterday/today window.
    * Template answer with citations ⊆ retrieved ids (no LLM).

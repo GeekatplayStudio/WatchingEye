@@ -78,5 +78,6 @@ describe("DatasetStore embeddings", () => {
     const hits = await store.search("XYZ-9876");
     expect(hits).toHaveLength(1);
     expect(hits[0]?.embedding).toHaveLength(DATASET_EMBED_DIM);
+    expect(await store.count()).toBe(1);
   });
 });
