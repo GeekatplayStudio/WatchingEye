@@ -9,24 +9,37 @@ done (exceptions require an ADR).
 
 ---
 
-## Skipped / technical debt (jumped while later work shipped)
+## Where we are (2026-08-01)
 
-These were left open while Phase 3.5 ReID and Phase 6 UI advanced. Prefer
-closing them before more Phase 6 depth.
+**Catch-up order for jumped Phase 1–2 / Phase 6 gaps: complete** (20/20).
 
-| Priority | Step | Gap |
+| Band | Status |
+|------|--------|
+| Phase 0 Foundation | ✅ done |
+| Phase 1 Edge detection | ✅ **1.1–1.5 done** (identities + pipeline events in SQLite) |
+| Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (~4.6 s) |
+| Phase 3 Multi-cam / edge | **3.5 ReID** ✅; RTSP/MCP/Pi/ESP32 still partial or skipped |
+| Phase 6 NL + vector dataset | **6.1, 6.2, 6.4, 6.5** ✅; **6.3** missing CLIP attr vectors column |
+| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice contracts only) |
+
+Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
+Scale, firmware, voice TTS, and sub-300 ms VLM are the big remaining cliffs.
+
+---
+
+## Remaining debt (honest open items)
+
+| Priority | Item | Gap |
 |----------|------|-----|
-| P0 | **1.5** SQLite object DB | ~~No sqlite/sqlx anywhere~~ ✅ identity persistence shipped; events remain memory/Postgres JSONB only |
-| P0 | **1.1** File & USB camera backends | ~~File + USB~~ ✅ ffmpeg USB/V4L2 pump in vision-engine (same grid as RTSP; `camera` crate stays decode-free) |
-| P1 | **1.4** Tracker soak + snapshot fixtures | ~~no 100-frame soak / fixture snapshots~~ ✅ synthetic gray8 sequences + live `Engine::process` soak in CI |
-| P1 | **2.3** Rules → notify webhook | ~~Rule types exist; no HTTP webhook delivery~~ ✅ zone enter + webhook + determinism tests |
-| P1 | **2.2** VLM golden / latency | Golden CI ✅; harness ✅; RTX 3090 record ✅ (~4.6 s p95, budget **not** met) |
-| P1 | **2.4** Event replay UI | ~~no past-event pipeline replay~~ ✅ select + path + provenance (no pixel retention) |
-| P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
-| P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
-| P2 | **2.1c / 6.3** pgvector | DINOv2 appearance ✅; text semantic RAG ✅ (`text_embedding` 768) |
-| P2 | **6.4** NL recall | grounded keyword ✅; CLIP multimodal ✅ (soft) |
-| P2 | **3.4** Split MCP servers | One read-only MCP baseline; not Camera/Timeline/Alert |
+| P1 | **2.2** VLM &lt;300 ms | Measured miss on RTX 3090 + qwen2.5vl:7b (~4.6 s p95) |
+| P1 | **3.3** RTSP scale | Connect works; not proven at 4 simultaneous streams + durable cam config |
+| P2 | **6.3** CLIP attr vectors | `clip_embedding` for search ✅; separate open-vocab attr vectors still open |
+| P2 | **2.1** Rust LLM provider | Orchestrator TS only |
+| P2 | **3.2 / A.2b** Pi CI | `edge-node` binary exists; no Pi cross-compile gate |
+| P2 | **3.1 / A.3** ESP32 | README only; no firmware / transport crate |
+| P2 | **3.4** Split MCP | One read-only baseline; not Camera/Timeline/Alert servers |
+| P2 | **V.1 / V.2** Voice | Schemas/tests only; no Whisper/Piper live loop |
+| P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
 
@@ -90,7 +103,7 @@ closing them before more Phase 6 depth.
       live `Engine::process` + `associate_predicted` (`engine_soak.rs`);
       secondary pure-association soak in `tracker::association`
 
-### Step 1.5 — SQLite object database (partial)
+### Step 1.5 — SQLite object database ✅
 - [x] Engine restart resumes with prior identities intact — `rusqlite`
       (`bundled`) store in `vision-engine`, seeded into `identity::Registry`
       on startup (`identify.rs`, `identity_store.rs`); matching itself stays
@@ -102,8 +115,10 @@ closing them before more Phase 6 depth.
 - [x] Migration test: v0 → current on a seeded database — `PRAGMA
       user_version` gates schema creation, exercised by
       `migrating_from_v0_creates_the_v1_schema_and_is_idempotent`
-- Note: this covers **identity** history only, not generic pipeline events
-  (still memory/Postgres JSONB) — see the debt table above.
+- [x] Pipeline event persistence without Postgres — gateway
+      `SqliteEventStore` (`node:sqlite`) at `data/events.sqlite` (or
+      `WATCHINGEYE_EVENTS_DB`); Postgres still preferred when
+      `DATABASE_URL` works; Vitest / `memory` stay ephemeral
 
 ---
 
@@ -272,7 +287,7 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 - [x] `datasetEnroll` / `anprEnabled` / attributes applied on classify
       (`intent-apply.ts`: enroll gate, regex ANPR, descriptor filter, `ocr_unconfirmed`)
 
-### Step 6.2 — Deeper recognition (ANPR & fine-grained) (partial)
+### Step 6.2 — Deeper recognition (ANPR & fine-grained) ✅
 - [x] Regex ANPR on live classify when `anprEnabled` (gateway `anpr.ts`)
 - [x] Real OCR ANPR path — orchestrator `plate-ocr.ts`: vehicle plate-band
       crop → injectable `OcrProvider` → regex confirm → VLM regex fallback;
@@ -301,7 +316,7 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 - Note: snapshot *bytes* still not retained (2.4 policy); only vectors +
   refs. CLIP multimodal search is Step 6.4 (separate `clip_embedding`).
 
-### Step 6.4 — Natural language recall & multimodal search (partial)
+### Step 6.4 — Natural language recall & multimodal search ✅
 - [x] Grounded queries over dataset (plate / breed keywords, `yesterday` /
       `today` window) — `GET /api/dataset/recall` + dashboard quotes in
       Active Tracking panel; hybrid keyword ∪ text-NN when text embedder
@@ -324,13 +339,13 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 ## Recommended catch-up order
 
 1. ~~**6.1 remaining** — wire `activeIntent` into classify / dataset / ANPR~~ ✅
-2. ~~**1.5** — SQLite identity persistence~~ ✅ (event persistence still open)
+2. ~~**1.5** — SQLite identity + pipeline event persistence~~ ✅
 3. ~~**1.1** — file + USB camera backends (ffmpeg USB/V4L2 in vision-engine)~~ ✅
 4. ~~**2.3** — notify webhook from rules~~ ✅
 5. ~~**1.4** — tracker soak + gray-sequence snapshot fixtures~~ ✅
 6. ~~**2.2** — fixture-image golden + opt-in GPU latency harness~~ ✅ (budget still open; RTX 3090 record shows ~4.6 s)
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
-8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP / text RAG still open)
+8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP attr vectors still open)
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅
 10. ~~**6.4** — grounded keyword NL recall~~ ✅
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
@@ -342,7 +357,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 17. ~~**2.2 latency record** — RTX 3090 + qwen2.5vl:7b p95 recorded (miss)~~ ✅
 18. ~~**1.2 motion soak** — 1000-frame static → zero detector invocations~~ ✅
 19. ~~**1.3** — Rust YOLO (`ort` feature) + detect &lt;100 ms recorded~~ ✅
-20. **Catch-up complete for listed order** — remaining ROADMAP debt is opportunistic (event SQLite, ESP32, SigLIP, etc.)
+20. ~~**1.5 event SQLite** — gateway `SqliteEventStore` without Postgres~~ ✅
+21. **3.3 RTSP scale** / **2.2 faster VLM** ← opportunistic next
 
 ---
 

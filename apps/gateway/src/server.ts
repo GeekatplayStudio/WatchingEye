@@ -14,7 +14,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
-import { createStore, type EventStore } from "./db.js";
+import { createStore, type EventStore, PgEventStore } from "./db.js";
+import { SqliteEventStore } from "./sqlite-events.js";
 import type { DetectionEvent, ObjectClass } from "./events.js";
 import { classify, type ClassifyResult } from "./classify.js";
 import { applyPatch, AVAILABLE_CLASSES, DEFAULT_SETTINGS, SettingsError, type Settings } from "./settings.js";
@@ -53,6 +54,11 @@ export interface ServerOptions {
     image?: string;
     text?: string;
   }) => Promise<{ values: number[]; model: string } | null>;
+  /**
+   * SQLite path for pipeline events when Postgres is unset.
+   * Use `memory` in tests; default is `data/events.sqlite` (or Vitest → memory).
+   */
+  eventsDbPath?: string;
 }
 
 /** Body of a classification request from the dashboard. */
@@ -177,7 +183,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   await app.register(websocket);
 
   const databaseUrl = opts.databaseUrl ?? process.env.DATABASE_URL;
-  const store: EventStore = await createStore(databaseUrl);
+  const store: EventStore = await createStore(databaseUrl, opts.eventsDbPath);
   const datasetStore: DatasetStoreLike = await createDatasetStore(databaseUrl);
   const classifier = opts.classifier ?? classify;
   const embedder = opts.embedder ?? defaultEmbedder;
@@ -188,6 +194,13 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   /** Cameras become known when they send frames — nothing is pre-registered. */
   const cameras = new Map<string, { id: string; kind: string; location: string }>();
 
+  const eventStoreKind =
+    store instanceof PgEventStore
+      ? "postgres"
+      : store instanceof SqliteEventStore
+        ? "sqlite"
+        : "memory";
+
   async function broadcast(event: DetectionEvent): Promise<void> {
     await store.insertEvent(event);
     const payload = JSON.stringify({ type: "event", event });
@@ -197,6 +210,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   app.get("/health", async () => ({
     status: "ok",
     service: "gateway",
+    eventStore: eventStoreKind,
     timestamp: new Date().toISOString(),
   }));
 

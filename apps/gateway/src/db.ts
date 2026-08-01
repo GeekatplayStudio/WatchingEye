@@ -1,14 +1,20 @@
 /**
- * Optional Postgres persistence (docker-compose provides pgvector-enabled
- * Postgres). The gateway works fully in-memory when DATABASE_URL is unset
- * or the database is unreachable — persistence is additive, never required.
+ * Optional event persistence (Postgres or SQLite).
+ *
+ * Preference order:
+ * 1. `DATABASE_URL` → Postgres JSONB (when migrate succeeds)
+ * 2. `WATCHINGEYE_EVENTS_DB` / default `data/events.sqlite` → SQLite
+ * 3. `memory` / Vitest → in-memory
+ *
+ * Persistence is additive — unreachable backends never block the gateway.
  */
 import pg from "pg";
 import type { DetectionEvent } from "./events.js";
+import { isMemoryEventsPath, SqliteEventStore } from "./sqlite-events.js";
 
 /** Thin wrapper so tests can run without a database. */
 export interface EventStore {
-  /** Persist one event (no-op when DB is absent). */
+  /** Persist one event. */
   insertEvent(event: DetectionEvent): Promise<void>;
   /** Most recent events, newest first. */
   recentEvents(limit: number): Promise<DetectionEvent[]>;
@@ -92,17 +98,45 @@ export class PgEventStore implements EventStore {
   }
 }
 
-/** Build the store: Postgres when DATABASE_URL works, memory otherwise. */
-export async function createStore(databaseUrl: string | undefined): Promise<EventStore> {
-  if (databaseUrl === undefined || databaseUrl === "") {
+/** Resolve the SQLite path when Postgres is not used. */
+export function resolveEventsDbPath(explicit?: string): string {
+  if (explicit !== undefined && explicit !== "") return explicit;
+  if (process.env.WATCHINGEYE_EVENTS_DB !== undefined && process.env.WATCHINGEYE_EVENTS_DB !== "") {
+    return process.env.WATCHINGEYE_EVENTS_DB;
+  }
+  // Vitest must not share a durable file across suites.
+  if (process.env.VITEST !== undefined) return "memory";
+  return "data/events.sqlite";
+}
+
+/**
+ * Build the store: Postgres → SQLite → memory.
+ *
+ * @example
+ * const store = await createStore(undefined, ":memory:");
+ */
+export async function createStore(
+  databaseUrl: string | undefined,
+  eventsDbPath?: string,
+): Promise<EventStore> {
+  if (databaseUrl !== undefined && databaseUrl !== "") {
+    const store = new PgEventStore(databaseUrl);
+    try {
+      await store.migrate();
+      return store;
+    } catch {
+      await store.close().catch(() => undefined);
+    }
+  }
+
+  const path = resolveEventsDbPath(eventsDbPath);
+  if (isMemoryEventsPath(path)) {
     return new MemoryEventStore();
   }
-  const store = new PgEventStore(databaseUrl);
+
   try {
-    await store.migrate();
-    return store;
+    return SqliteEventStore.open(path === ":memory:" ? ":memory:" : path);
   } catch {
-    await store.close().catch(() => undefined);
     return new MemoryEventStore();
   }
 }
