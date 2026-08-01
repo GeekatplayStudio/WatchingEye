@@ -30,6 +30,7 @@ mod reolink_client;
 mod rtsp;
 mod rule_set;
 mod scan_jobs;
+mod usb_pump;
 mod zone_rules;
 mod zones;
 
@@ -155,6 +156,15 @@ async fn main() {
             "starting file camera pump"
         );
         let _pump = file_pump::spawn(frames.clone(), file_args);
+    }
+
+    if let Some(usb_args) = cli.usb_camera.clone() {
+        info!(
+            device = %usb_args.input,
+            camera_id = %usb_args.camera_id,
+            "starting USB camera pump"
+        );
+        let _pump = usb_pump::spawn(frames.clone(), usb_args);
     }
 
     let app = api::router(frames, identity_state, gateway_url);

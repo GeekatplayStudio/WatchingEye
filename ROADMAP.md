@@ -17,7 +17,7 @@ closing them before more Phase 6 depth.
 | Priority | Step | Gap |
 |----------|------|-----|
 | P0 | **1.5** SQLite object DB | ~~No sqlite/sqlx anywhere~~ ✅ identity persistence shipped; events remain memory/Postgres JSONB only |
-| P0 | **1.1** File & USB camera backends | File `CameraSource` + CLI pump + golden tests ✅; USB still deferred |
+| P0 | **1.1** File & USB camera backends | ~~File + USB~~ ✅ ffmpeg USB/V4L2 pump in vision-engine (same grid as RTSP; `camera` crate stays decode-free) |
 | P1 | **1.4** Tracker soak + snapshot fixtures | ~~no 100-frame soak / fixture snapshots~~ ✅ synthetic gray8 sequences + live `Engine::process` soak in CI |
 | P1 | **2.3** Rules → notify webhook | ~~Rule types exist; no HTTP webhook delivery~~ ✅ zone enter + webhook + determinism tests |
 | P1 | **2.2** VLM golden / latency | Golden fixture CI ✅; &lt;300 ms GPU latency gate still open |
@@ -49,7 +49,7 @@ closing them before more Phase 6 depth.
 
 ## Phase 1 — Single-Camera Edge Detection
 
-### Step 1.1 — File & USB camera backends (partial)
+### Step 1.1 — File & USB camera backends ✅
 - [x] `vision-engine --camera file --input <path>` streams frames
       (raw gray / frame directory via `camera::file::FileCamera`; `.mp4`
       via ffmpeg → 96×72 gray8, same grid as RTSP)
@@ -57,9 +57,10 @@ closing them before more Phase 6 depth.
       (`FileCamera` concat/dir tests + `file_pump` engine ingest count)
 - [x] Frame validator rejects corrupt/truncated frames with typed
       `CameraError::BadFrame` (`camera::validate::validate_frame`)
-- [ ] USB / V4L2 `CameraSource` (deferred — browser webcam + RTSP cover
-      live capture today)
-- Note: Step header stays partial until USB lands; file path is done.
+- [x] USB / V4L2 live capture via ffmpeg in `vision-engine` (`usb_pump`:
+      dshow on Windows, v4l2 on Linux → 96×72 gray8; soft-fail if ffmpeg /
+      device missing). Not a `CameraSource` in `crates/camera` — same
+      split as RTSP. CLI: `--camera usb [--input <device>]`
 
 ### Step 1.2 — Motion detection (partial)
 - [x] `crates/motion`: background model + blobs, wired into `vision-engine`
@@ -295,7 +296,7 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 
 1. ~~**6.1 remaining** — wire `activeIntent` into classify / dataset / ANPR~~ ✅
 2. ~~**1.5** — SQLite identity persistence~~ ✅ (event persistence still open)
-3. ~~**1.1** — file camera backend + golden fixture test~~ ✅ (USB still open)
+3. ~~**1.1** — file + USB camera backends (ffmpeg USB/V4L2 in vision-engine)~~ ✅
 4. ~~**2.3** — notify webhook from rules~~ ✅
 5. ~~**1.4** — tracker soak + gray-sequence snapshot fixtures~~ ✅
 6. ~~**2.2** — fixture-image golden decision in CI~~ ✅ (GPU &lt;300 ms latency still open)
@@ -305,9 +306,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
 12. ~~**2.1c** — text embedding semantic retriever~~ ✅
-13. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP ← **next**
-14. **2.2 latency** — GPU benchmark when hardware is available
-15. **6.2 / 6.4 remaining** — CLIP attrs / Paddle-LPR / multimodal CLIP search
+13. **2.2 latency** — GPU benchmark when hardware is available ← **next**
+14. **6.2 / 6.4 remaining** — CLIP attrs / Paddle-LPR / multimodal CLIP search
+15. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
 
 ---
 

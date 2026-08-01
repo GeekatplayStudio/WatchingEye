@@ -5,9 +5,9 @@
 //! 1. **Concatenated file** — `width × height` bytes per frame, back-to-back.
 //! 2. **Directory** — one gray8 file per frame; names sorted lexicographically.
 //!
-//! MP4 / RTSP decoding stays in the service layer (ffmpeg), matching
-//! `vision-engine`'s RTSP path. This module stays dependency-light so
-//! `cargo test` never needs ffmpeg.
+//! MP4 / RTSP / USB live decode stays in the service layer (ffmpeg), matching
+//! `vision-engine`'s RTSP and `usb_pump` paths. This module stays
+//! dependency-light so `cargo test` never needs ffmpeg.
 
 use crate::validate::{expected_byte_len, validate_frame};
 use crate::{CameraError, CameraInfo, CameraSource, Frame};

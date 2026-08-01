@@ -3,6 +3,11 @@
 //! Every camera type (ESP32 stream, RTSP, USB, video file, image upload,
 //! WebRTC, drone) implements [`CameraSource`]. The pipeline only ever sees
 //! this trait, so backends are swappable and testable in isolation.
+//!
+//! **Live USB / RTSP decode** is not implemented here: `vision-engine` runs
+//! ffmpeg as a subprocess (see `usb_pump` / `rtsp`) and feeds gray8 grids
+//! into the engine. This crate stays free of ffmpeg so unit tests never
+//! need a capture device or decoder on PATH.
 
 pub mod discovery;
 pub mod file;
