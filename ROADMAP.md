@@ -20,7 +20,7 @@ done (exceptions require an ADR).
 | Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (best ~3.9 s `llava`) |
 | Phase 3 Multi-cam / edge | **3.2–3.5** ✅ (ESP32 firmware pending hardware); MCP Camera/Timeline/Alert ✅ |
 | Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
-| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; V.1 STT+parse partial; Piper open) |
+| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; V.1 STT partial; V.2 TTS stub/cli partial) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
 Durable multi-cam config + 4 synthetic pumps proven; live IP farms, firmware,
@@ -37,7 +37,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 | P2 | **3.2** edge offline cache | Pi CI + SQLite gate-open cache + hub sync ✅; not a live-Pi smoke |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
 | P2 | **3.4** Split MCP | Camera / Timeline / Alert bins + client demo ✅ (read-only; no actuation) |
-| P2 | **V.1 / V.2** Voice | V.1 STT→parse ✅ (stub/cli); audio-event + Piper/V.2 open |
+| P2 | **V.1 / V.2** Voice | STT→parse ✅; facts→TTS stub/cli ✅; audio-events + RAG live loop open |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
@@ -291,9 +291,14 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
       transcript/upload panel; unknown phrases rejected (no LLM intent)
 - [ ] Audio-event detection (glass-break / bark / etc.)
 
-### Step V.2 — Voice response (contracts only)
+### Step V.2 — Voice response (partial)
 - [x] `renderSpeech` from validated facts only (tested)
-- [ ] Piper TTS; two-way RAG ask/answer; Voice page live loop
+- [x] Piper/stub `SpeechSynthesizer`; facts → `renderSpeech` → speak —
+      orchestrator `POST /voice/speak` + gateway `POST /api/voice/speak`
+      (proxy only); free-form `text` rejected; `WATCHINGEYE_PIPER=stub|auto|cli`;
+      stub WAV beep in CI; Voice page speak panel; Piper ONNX not yet in
+      `install-models`
+- [ ] Two-way RAG ask/answer; Voice page live mic duplex loop
 
 ---
 
@@ -398,8 +403,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 26. ~~**edge offline cache** — SQLite + hub sync (gate-open metadata)~~ ✅
 27. ~~**3.4 Split MCP** — Camera / Timeline / Alert + client demo~~ ✅
 28. ~~**V.1 Whisper STT → parse** — stub/cli + gateway proxy + Voice panel~~ ✅ (audio-events still open)
-29. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
-30. **2.1 Rust LLM provider** / **V.2 Piper** / **V.1 audio-events** — next cliffs
+29. ~~**V.2 Piper/stub TTS** — facts→speak route + Voice panel~~ ✅ (RAG live loop still open)
+30. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
+31. **2.1 Rust LLM** / **V.1 audio-events** / **V.2 RAG duplex** — next cliffs
 
 ---
 

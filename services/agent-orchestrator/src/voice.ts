@@ -36,9 +36,11 @@ export interface SpeechRecognizer {
   transcribeFile(bytes: Uint8Array, mimeType?: string): Promise<string>;
 }
 
-/** Text-to-speech backend (Piper in production). */
+/** Text-to-speech backend (Piper in production; stub in CI). */
 export interface SpeechSynthesizer {
-  /** Render text to audio bytes. */
+  /** Backend id for provenance (`stub` / `piper-cli`). */
+  readonly name: string;
+  /** Render already-templated speech text to WAV/PCM bytes. */
   speak(text: string): Promise<Uint8Array>;
 }
 

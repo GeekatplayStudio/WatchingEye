@@ -1,11 +1,12 @@
 /**
- * Voice: Whisper STT → closed VoiceCommand parse (ROADMAP V.1).
- * Piper TTS / live two-way loop remain V.2.
+ * Voice: Whisper STT → parse (V.1) and facts → TTS (V.2 partial).
+ * Two-way RAG ask/answer + live mic loop remain open.
  */
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { VoiceCommandPanel } from "@/components/voice-command-panel";
+import { VoiceSpeakPanel } from "@/components/voice-speak-panel";
 import { Mic, Volume2 } from "lucide-react";
 
 export default function VoicePage() {
@@ -14,10 +15,11 @@ export default function VoicePage() {
       <PageHeader
         eyebrow="WatchingEye · Voice module"
         title="Voice"
-        lede="Local speech in → rule-parsed commands out. Transcripts are untrusted; unknown phrases are rejected, never guessed."
-        actions={<Badge variant="success">V.1 STT + parse</Badge>}
+        lede="Speech in is untrusted and rule-parsed. Speech out is templated from validated facts only — never free-form model text."
+        actions={<Badge variant="success">V.1 + V.2 TTS</Badge>}
       />
       <VoiceCommandPanel />
+      <VoiceSpeakPanel />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -25,12 +27,8 @@ export default function VoicePage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          Upload audio or type a phrase. Orchestrator STT defaults to stub in CI
-          (<code>WATCHINGEYE_WHISPER=stub</code>); with{" "}
-          <code>whisper-cli</code> + <code>models/voice/ggml-base.en.bin</code> it
-          uses the whisper.cpp CLI. Only closed intents (
-          <code>show_camera</code>, <code>set_mode</code>, <code>query_events</code>,{" "}
-          <code>status</code>) succeed.
+          <code>WATCHINGEYE_WHISPER=stub|auto|cli</code>. Audio-event detection
+          (glass-break / bark) is still open.
         </CardContent>
       </Card>
       <Card>
@@ -40,8 +38,9 @@ export default function VoicePage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          Spoken replies (Piper) and the live two-way loop are still ROADMAP V.2.
-          <code> renderSpeech</code> already templates validated facts only.
+          Stub beep or <code>piper</code> CLI when an ONNX voice is present (
+          <code>WATCHINGEYE_PIPER</code>). Piper voices are not yet in{" "}
+          <code>install-models</code>. Two-way RAG ask/answer remains ROADMAP open.
         </CardContent>
       </Card>
     </div>

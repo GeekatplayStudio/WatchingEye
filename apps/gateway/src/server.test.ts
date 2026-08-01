@@ -64,6 +64,43 @@ describe("gateway server", () => {
     await app.close();
   });
 
+  it("proxies voice speak from facts and rejects free-form text", async () => {
+    const app = await buildServer({
+      voiceSpeak: async ({ facts }) => ({
+        outcome: "spoken",
+        speechText: "Detected person at the driveway.",
+        audioBase64: "UkZGRg==",
+        mimeType: "audio/wav",
+        tts: { model: "stub" },
+        factsLen: Array.isArray(facts) ? facts.length : 0,
+        latencyMs: 1,
+      }),
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/voice/speak",
+      payload: {
+        facts: [
+          {
+            objectClass: "person",
+            cameraId: "driveway",
+            timestamp: "2026-07-27T15:14:00Z",
+            confidence: 0.9,
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().tts.model).toBe("stub");
+    const banned = await app.inject({
+      method: "POST",
+      url: "/api/voice/speak",
+      payload: { text: "say anything", facts: [] },
+    });
+    expect(banned.statusCode).toBe(400);
+    await app.close();
+  });
+
   it("reports healthy", async () => {
     const app = await buildServer();
     const res = await app.inject({ method: "GET", url: "/health" });

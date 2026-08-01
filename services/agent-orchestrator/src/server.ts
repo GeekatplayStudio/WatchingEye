@@ -48,8 +48,10 @@ import {
   type OpenVocabScorer,
 } from "./open-vocab.js";
 import { resolveVoiceCommand } from "./voice-command.js";
-import type { SpeechRecognizer } from "./voice.js";
+import { speakFacts } from "./voice-speak.js";
+import type { SpeechRecognizer, SpeechSynthesizer } from "./voice.js";
 import { createSpeechRecognizer, WhisperUnavailableError } from "./whisper.js";
+import { createSpeechSynthesizer, PiperUnavailableError } from "./piper.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
@@ -69,6 +71,7 @@ export function buildOrchestrator(
   clipEmbedder?: ClipEmbedder,
   attrEmbedder?: AttrEmbedder,
   speechRecognizer?: SpeechRecognizer,
+  speechSynthesizer?: SpeechSynthesizer,
 ): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const ocr = ocrProvider ?? createDefaultOcrProvider();
@@ -77,6 +80,7 @@ export function buildOrchestrator(
   const clipEmbed = clipEmbedder ?? createDefaultClipEmbedder();
   const attrEmbed = attrEmbedder ?? createDefaultAttrEmbedder();
   const speech = speechRecognizer ?? createSpeechRecognizer();
+  const tts = speechSynthesizer ?? createSpeechSynthesizer();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -113,6 +117,7 @@ export function buildOrchestrator(
       clipEmbed: clipEmbed.name,
       attrEmbed: attrEmbed.name,
       whisper: speech.name,
+      piper: tts.name,
     };
   });
 
@@ -143,6 +148,35 @@ export function buildOrchestrator(
           error: "whisper unavailable",
           detail: err.message,
           hint: "set WATCHINGEYE_WHISPER=stub or install whisper-cli + ggml model",
+        });
+      }
+      throw err;
+    }
+  });
+
+  /**
+   * SpokenFact[] → renderSpeech → TTS. Free-form `text` is rejected.
+   * Body: `{ facts: SpokenFact[] }`.
+   */
+  app.post("/voice/speak", async (req, reply) => {
+    const body = req.body as { facts?: unknown; text?: unknown };
+    if (body.text !== undefined) {
+      return reply.status(400).send({
+        error: "free-form text is not allowed; send facts only",
+      });
+    }
+    try {
+      const result = await speakFacts({ facts: body.facts, synthesizer: tts });
+      if (result.outcome === "rejected") {
+        return reply.status(400).send(result);
+      }
+      return result;
+    } catch (err) {
+      if (err instanceof PiperUnavailableError) {
+        return reply.status(503).send({
+          error: "piper unavailable",
+          detail: err.message,
+          hint: "set WATCHINGEYE_PIPER=stub or install piper + ONNX voice",
         });
       }
       throw err;

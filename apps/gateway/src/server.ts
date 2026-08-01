@@ -11,6 +11,7 @@
  * - `POST /api/classify` — classify a gated event (proxied to orchestrator)
  * - `POST /api/edge/sync` — AI-free ingest of edge-node offline cache drains
  * - `POST /api/voice/command` — proxy STT→parse to orchestrator (no AI here)
+ * - `POST /api/voice/speak` — proxy facts→TTS to orchestrator (no AI here)
  * - `GET  /ws` — live event stream
  */
 import Fastify, { type FastifyInstance } from "fastify";
@@ -76,6 +77,8 @@ export interface ServerOptions {
     audioBase64?: string;
     mimeType?: string;
   }) => Promise<unknown>;
+  /** Injectable voice-speak handler (orchestrator `/voice/speak` proxy). */
+  voiceSpeak?: (body: { facts: unknown }) => Promise<unknown>;
 }
 
 /** Body of a classification request from the dashboard. */
@@ -249,6 +252,30 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
       const json = (await res.json()) as unknown;
       if (!res.ok) {
         const err = new Error("voice command proxy failed") as Error & {
+          status: number;
+          body: unknown;
+        };
+        err.status = res.status;
+        err.body = json;
+        throw err;
+      }
+      return json;
+    });
+  const voiceSpeak =
+    opts.voiceSpeak ??
+    (async (body: { facts: unknown }) => {
+      const res = await fetch(
+        `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/voice/speak`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(60_000),
+        },
+      );
+      const json = (await res.json()) as unknown;
+      if (!res.ok) {
+        const err = new Error("voice speak proxy failed") as Error & {
           status: number;
           body: unknown;
         };
@@ -435,6 +462,31 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         return reply.status(e.status).send(e.body ?? { error: e.message });
       }
       return reply.status(502).send({ error: "voice command unavailable", detail: e.message });
+    }
+  });
+
+  /**
+   * Voice speak proxy — relays SpokenFact[] to the orchestrator.
+   * No TTS or templating here (AI-free gateway).
+   */
+  app.post("/api/voice/speak", async (req, reply) => {
+    const body = req.body as { facts?: unknown; text?: unknown };
+    if (body?.text !== undefined) {
+      return reply.status(400).send({
+        error: "free-form text is not allowed; send facts only",
+      });
+    }
+    if (!Array.isArray(body?.facts)) {
+      return reply.status(400).send({ error: "facts array is required" });
+    }
+    try {
+      return await voiceSpeak({ facts: body.facts });
+    } catch (err) {
+      const e = err as Error & { status?: number; body?: unknown };
+      if (typeof e.status === "number") {
+        return reply.status(e.status).send(e.body ?? { error: e.message });
+      }
+      return reply.status(502).send({ error: "voice speak unavailable", detail: e.message });
     }
   });
 
