@@ -29,15 +29,20 @@ describe("resolveVlmModel", () => {
     expect(r.source).toBe("detected");
   });
 
-  it("prefers the earlier entry in the known list", () => {
+  it("prefers the earlier entry in the known list (latency order)", () => {
     const r = resolveVlmModel(["llava", "gemma3:4b", "qwen2.5vl:7b"], undefined);
-    expect(r.model).toBe("qwen2.5vl:7b");
+    expect(r.model).toBe("llava");
   });
 
   it("matches tags that carry an implicit :latest", () => {
     const r = resolveVlmModel(["llama3.2-vision:latest"], undefined);
     expect(r.installed).toBe(true);
     expect(r.model).toBe("llama3.2-vision:latest");
+  });
+
+  it("prefers llava over qwen when both are installed", () => {
+    const r = resolveVlmModel(["qwen2.5vl:7b", "llava:latest"], undefined);
+    expect(r.model).toBe("llava:latest");
   });
 
   it("treats an empty or blank pin as unset", () => {

@@ -17,7 +17,7 @@ done (exceptions require an ADR).
 |------|--------|
 | Phase 0 Foundation | ✅ done |
 | Phase 1 Edge detection | ✅ **1.1–1.5 done** (identities + pipeline events in SQLite) |
-| Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (~4.6 s) |
+| Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (best ~3.9 s `llava`) |
 | Phase 3 Multi-cam / edge | **3.3 + 3.5** ✅; Pi CI / ESP32 / split MCP still open |
 | Phase 6 NL + vector dataset | **6.1, 6.2, 6.4, 6.5** ✅; **6.3** missing CLIP attr vectors column |
 | Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice contracts only) |
@@ -32,7 +32,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 
 | Priority | Item | Gap |
 |----------|------|-----|
-| P1 | **2.2** VLM &lt;300 ms | Measured miss on RTX 3090 + qwen2.5vl:7b (~4.6 s p95) |
+| P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
 | P2 | **6.3** CLIP attr vectors | `clip_embedding` for search ✅; separate open-vocab attr vectors still open |
 | P2 | **2.1** Rust LLM provider | Orchestrator TS only |
 | P2 | **3.2 / A.2b** Pi CI | `edge-node` binary exists; no Pi cross-compile gate |
@@ -153,11 +153,14 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 - [x] Gated classify path: snapshot → VLM → guardrails → identity
 - [x] Opt-in GPU latency benchmark harness —
       `classify-latency.bench.test.ts` + `npm run test:gpu-latency`
-      (`WATCHINGEYE_GPU_LATENCY=1` assert, `=record` measure-only);
+      (`WATCHINGEYE_GPU_LATENCY=1` assert, `=record` measure-only;
+      `WATCHINGEYE_GPU_LATENCY_MODELS=known` comparative matrix);
       writes `docs/gpu-latency-results.{json,md}`
-- [ ] Proven p95 &lt; 300 ms on GPU — **measured miss** on RTX 3090 +
-      `qwen2.5vl:7b` (p95 ≈ 4.6 s, see `gpu-latency-results.md`); keep
-      open until a faster VLM path exists
+- [x] Comparative VLM latency record (RTX 3090) — `llava` fastest warm
+      p95 ≈ 3.9 s; `qwen2.5vl:7b` ≈ 4.2–5.0 s; `gemma3:4b` slower;
+      default detect order prefers `llava` (pin `VLM_MODEL` for quality)
+- [ ] Proven p95 &lt; 300 ms on GPU — **still a miss** (fastest recorded
+      ~3.9 s); keep open until a sub-second VLM path exists
 - [x] Fixture-image golden decision test in CI —
       `fixtures/golden-scene.png` + `golden-decision.test.ts` runs
       snapshot → StubProvider VLM → guardrails → `outcome: "action"`
@@ -348,7 +351,7 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 3. ~~**1.1** — file + USB camera backends (ffmpeg USB/V4L2 in vision-engine)~~ ✅
 4. ~~**2.3** — notify webhook from rules~~ ✅
 5. ~~**1.4** — tracker soak + gray-sequence snapshot fixtures~~ ✅
-6. ~~**2.2** — fixture-image golden + opt-in GPU latency harness~~ ✅ (budget still open; RTX 3090 record shows ~4.6 s)
+6. ~~**2.2** — fixture-image golden + opt-in GPU latency harness~~ ✅ (budget still open; best ~3.9 s `llava`)
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
 8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP attr vectors still open)
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅
@@ -364,7 +367,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 19. ~~**1.3** — Rust YOLO (`ort` feature) + detect &lt;100 ms recorded~~ ✅
 20. ~~**1.5 event SQLite** — gateway `SqliteEventStore` without Postgres~~ ✅
 21. ~~**3.3 RTSP scale** — durable camera SQLite + 4-pump soak~~ ✅
-22. **2.2 faster VLM** / Pi CI / ESP32 ← opportunistic next
+22. ~~**2.2 comparative VLM** — multi-model matrix; prefer `llava` (~3.9 s); budget still open~~ ✅
+23. **Pi CI / ESP32 / 6.3 CLIP attr vectors** ← opportunistic next
 
 ---
 

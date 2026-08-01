@@ -32,8 +32,8 @@ if ! ollama list >/dev/null 2>&1; then
 fi
 
 # --- Vision-language + LLM models ---
-step "Pulling vision-language model: qwen2.5vl:7b (scene analysis)"
-ollama pull qwen2.5vl:7b
+step "Pulling vision-language model: llava (faster default; pin VLM_MODEL=qwen2.5vl:7b for quality)"
+ollama pull llava
 
 step "Pulling small LLM: llama3.2:3b (structured reasoning)"
 ollama pull llama3.2:3b
@@ -101,7 +101,7 @@ else
 fi
 
 printf '\n\033[32mModel install complete. Inventory:\033[0m\n'
-echo "  Ollama:  qwen2.5vl:7b (VLM), llama3.2:3b (LLM)"
+echo "  Ollama:  llava (VLM), llama3.2:3b (LLM)"
 echo "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
 echo "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
 echo "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"

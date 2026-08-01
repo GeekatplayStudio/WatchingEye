@@ -28,8 +28,8 @@ if ($null -eq $ollama) {
 Write-Host "Found $(ollama --version)"
 
 # --- Vision-language + LLM models (served by Ollama) ---
-Write-Step "Pulling vision-language model: qwen2.5vl:7b (scene analysis)"
-ollama pull qwen2.5vl:7b
+Write-Step "Pulling vision-language model: llava (faster default; pin VLM_MODEL=qwen2.5vl:7b for quality)"
+ollama pull llava
 
 Write-Step "Pulling small LLM: llama3.2:3b (structured reasoning)"
 ollama pull llama3.2:3b
@@ -109,7 +109,7 @@ if ((Test-Path $clipOnnx) -and (Test-Path $clipText)) {
 }
 
 Write-Host "`nModel install complete. Inventory:" -ForegroundColor Green
-Write-Host "  Ollama:  qwen2.5vl:7b (VLM), llama3.2:3b (LLM)"
+Write-Host "  Ollama:  llava (VLM), llama3.2:3b (LLM)"
 Write-Host "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
 Write-Host "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
 Write-Host "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"

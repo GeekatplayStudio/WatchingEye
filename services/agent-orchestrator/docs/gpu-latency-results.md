@@ -1,22 +1,20 @@
 # GPU classify latency results (ROADMAP 2.2)
 
-Recorded: `2026-08-01T21:42:17.848Z`
+Recorded: `2026-08-01T22:16:36.897Z`
 Mode: `record`
 Hardware: NVIDIA GeForce RTX 3090 (24 GB), driver 610.62
-Model: `qwen2.5vl:7b`
 
-| Metric | Value |
-|--------|------:|
-| samples | 3 |
-| p50 | 4578 ms |
-| p95 | 4625 ms |
-| budget | 300 ms |
-| budget met | **no** |
+Budget: **300 ms** (p95)
 
-Raw samples (ms): 4578, 4552, 4625
+| Model | samples | p50 (ms) | p95 (ms) | budget met |
+|-------|--------:|---------:|---------:|:----------:|
+| `gemma3:4b` | 3 | 5453 | 5638 | **no** |
+| `llava:latest` | 3 | 3876 | 3967 | **no** |
+| `qwen2.5vl:7b` | 3 | 4169 | 4378 | **no** |
 
-p95 over budget on this hardware/model. `qwen2.5vl:7b` typically needs
-multiple seconds per warm classify even on RTX 3090-class GPUs. Keep the
-proven-&lt;300 ms ROADMAP checkbox open until a faster VLM path exists.
+Raw samples (ms):
+- `gemma3:4b`: 5378, 5453, 5638
+- `llava:latest`: 3967, 3876, 3866
+- `qwen2.5vl:7b`: 4169, 4378, 4121
 
-Re-run: `WATCHINGEYE_GPU_LATENCY=record npm run test:gpu-latency`
+No model in this run met p95 &lt; 300 ms. Fastest warm p95 was `llava:latest` at 3967 ms. Keep the proven-&lt;300ms checkbox open until a faster VLM path exists. Fixture is 1×1 PNG — cost is model/runtime, not pixels.

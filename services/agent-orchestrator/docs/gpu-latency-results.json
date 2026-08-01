@@ -1,12 +1,42 @@
 {
-  "recordedAt": "2026-08-01T21:42:17.848Z",
-  "hardware": "NVIDIA GeForce RTX 3090 (24 GB), driver 610.62, Windows 10.0.26200",
-  "model": "qwen2.5vl:7b",
-  "samplesMs": [4578, 4552, 4625],
-  "p50Ms": 4578,
-  "p95Ms": 4625,
-  "budgetMs": 300,
-  "budgetMet": false,
+  "recordedAt": "2026-08-01T22:16:36.897Z",
   "mode": "record",
-  "notes": "p95 over budget on this hardware/model. qwen2.5vl:7b typically needs multiple seconds per warm classify even on RTX 3090-class GPUs. Keep the proven-<300ms checkbox open until a faster VLM path exists."
+  "budgetMs": 300,
+  "hardware": "NVIDIA GeForce RTX 3090 (24 GB), driver 610.62",
+  "models": [
+    {
+      "model": "gemma3:4b",
+      "samplesMs": [
+        5378,
+        5453,
+        5638
+      ],
+      "p50Ms": 5453,
+      "p95Ms": 5638,
+      "budgetMet": false
+    },
+    {
+      "model": "llava:latest",
+      "samplesMs": [
+        3967,
+        3876,
+        3866
+      ],
+      "p50Ms": 3876,
+      "p95Ms": 3967,
+      "budgetMet": false
+    },
+    {
+      "model": "qwen2.5vl:7b",
+      "samplesMs": [
+        4169,
+        4378,
+        4121
+      ],
+      "p50Ms": 4169,
+      "p95Ms": 4378,
+      "budgetMet": false
+    }
+  ],
+  "notes": "No model in this run met p95 &lt; 300 ms. Fastest warm p95 was `llava:latest` at 3967 ms. Keep the proven-&lt;300ms checkbox open until a faster VLM path exists. Fixture is 1×1 PNG — cost is model/runtime, not pixels."
 }

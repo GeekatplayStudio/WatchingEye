@@ -12,7 +12,7 @@ warn() { printf '    \033[33m%s\033[0m\n' "$1"; }
 
 # Kept in step with KNOWN_VISION_MODELS in
 # services/agent-orchestrator/src/vlm-model.ts — same order, same names.
-PREFERRED=("qwen2.5vl:7b" "gemma3:4b" "llama3.2-vision" "llava")
+PREFERRED=("llava" "qwen2.5vl:7b" "gemma3:4b" "llama3.2-vision")
 PULL="${PULL:-0}"
 
 # A cold daemon can take a couple of seconds to answer its first request.
@@ -20,7 +20,7 @@ up() { curl -fsS -o /dev/null --max-time "${1:-10}" http://localhost:11434/api/t
 
 if ! command -v ollama >/dev/null 2>&1; then
     warn "ollama not installed - tracking works, classification will be refused"
-    warn "install from https://ollama.com/download, then: ollama pull ${PREFERRED[1]}"
+    warn "install from https://ollama.com/download, then: ollama pull ${PREFERRED[0]}"
     exit 0
 fi
 

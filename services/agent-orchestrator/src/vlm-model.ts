@@ -7,12 +7,18 @@
  * command that fixes it.
  */
 
-/** Vision-capable models this project knows how to drive, best first. */
+/**
+ * Vision-capable models this project knows how to drive.
+ *
+ * Order is measured warm classify preference on RTX 3090 (see
+ * `docs/gpu-latency-results.md`): fastest first among models that load.
+ * Pin `VLM_MODEL` to override (e.g. keep `qwen2.5vl:7b` for quality).
+ */
 export const KNOWN_VISION_MODELS = [
+  "llava",
   "qwen2.5vl:7b",
   "gemma3:4b",
   "llama3.2-vision",
-  "llava",
 ] as const;
 
 /** Outcome of resolving the model to use. */
@@ -43,7 +49,7 @@ function sameModel(a: string, b: string): boolean {
  * @param installed - model tags the daemon reports, e.g. from `/api/tags`
  * @param envModel - the `VLM_MODEL` override, if the operator set one
  * @example
- * resolveVlmModel(["gemma3:4b"], undefined).model; // "gemma3:4b"
+ * resolveVlmModel(["llava:latest"], undefined).model; // "llava:latest"
  */
 export function resolveVlmModel(
   installed: readonly string[],

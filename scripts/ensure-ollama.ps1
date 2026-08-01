@@ -23,7 +23,7 @@ function Write-Warn2($msg) { Write-Host "    $msg" -ForegroundColor Yellow }
 
 # Kept in step with KNOWN_VISION_MODELS in
 # services/agent-orchestrator/src/vlm-model.ts — same order, same names.
-$preferred = @("qwen2.5vl:7b", "gemma3:4b", "llama3.2-vision", "llava")
+$preferred = @("llava", "qwen2.5vl:7b", "gemma3:4b", "llama3.2-vision")
 
 $ollamaBin = Join-Path $env:LOCALAPPDATA "Programs\Ollama"
 if (Test-Path $ollamaBin) { $env:Path = "$ollamaBin;$env:Path" }
@@ -41,7 +41,7 @@ function Test-OllamaUp {
 
 if ($null -eq $exe) {
     Write-Warn2 "ollama not installed - tracking works, classification will be refused"
-    Write-Warn2 "install from https://ollama.com/download, then: ollama pull $($preferred[1])"
+    Write-Warn2 "install from https://ollama.com/download, then: ollama pull $($preferred[0])"
     exit 0
 }
 
