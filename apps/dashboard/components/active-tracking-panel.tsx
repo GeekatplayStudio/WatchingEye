@@ -1,10 +1,12 @@
 "use client";
 
 /**
- * Natural-language target registration and dataset recall.
+ * Natural-language target registration and grounded dataset recall.
  *
  * Prompts go to `/api/nlp/target`, which updates settings and broadcasts
  * over WebSocket so every console reflects the new tracked classes immediately.
+ * Recall queries `GET /api/dataset/recall` and surfaces answer + citations +
+ * evidence quotes (zero black box).
  */
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +28,29 @@ interface SettingsSnapshot {
   activeIntent: ActiveIntent | null;
 }
 
+interface EvidenceQuote {
+  recordId: string;
+  label: string;
+  text: string;
+}
+
+interface GroundedRecall {
+  answer: string;
+  citations: string[];
+  records: Array<{
+    id: string;
+    class: string;
+    cameraId: string;
+    timestamp: string;
+    licensePlate?: string;
+    breedOrModel?: string;
+  }>;
+  evidenceQuotes: EvidenceQuote[];
+  query: string;
+  since?: string;
+  until?: string;
+}
+
 export function ActiveTrackingPanel({
   activeClasses: initialClasses,
 }: {
@@ -35,7 +60,9 @@ export function ActiveTrackingPanel({
   const [promptInput, setPromptInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
+  const [recall, setRecall] = useState<GroundedRecall | null>(null);
+  const [recallError, setRecallError] = useState<string | null>(null);
+  const [recalling, setRecalling] = useState(false);
   const [activeClasses, setActiveClasses] = useState(initialClasses);
   const [intent, setIntent] = useState<ActiveIntent | null>(null);
   const [lastBroadcastMs, setLastBroadcastMs] = useState<number | null>(null);
@@ -106,13 +133,24 @@ export function ActiveTrackingPanel({
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || recalling) return;
+    setRecalling(true);
+    setRecallError(null);
+    setRecall(null);
     try {
-      const res = await fetch(`/api/dataset/search?q=${encodeURIComponent(searchQuery)}`);
-      const body = (await res.json()) as { records?: unknown[] };
-      setSearchResultCount(body.records?.length ?? 0);
+      const res = await fetch(
+        `/api/dataset/recall?q=${encodeURIComponent(searchQuery)}&limit=20`,
+      );
+      const body = (await res.json()) as GroundedRecall & { error?: string };
+      if (!res.ok) {
+        setRecallError(body.error ?? `recall failed (${res.status})`);
+        return;
+      }
+      setRecall(body);
     } catch {
-      setSearchResultCount(0);
+      setRecallError("gateway unreachable");
+    } finally {
+      setRecalling(false);
     }
   };
 
@@ -206,14 +244,51 @@ export function ActiveTrackingPanel({
           placeholder="Dataset Recall (e.g. 'golden retriever' or 'ABC-1234')"
           className="h-7 w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
         />
-        <Button type="submit" variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs">
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs"
+          disabled={recalling}
+        >
           <Search className="h-3.5 w-3.5" />
         </Button>
       </form>
-      {searchResultCount !== null && (
-        <p className="font-mono text-[11px] text-muted-foreground">
-          Found {searchResultCount} historical event record(s) matching &quot;{searchQuery}&quot;.
-        </p>
+
+      {recallError !== null && (
+        <p className="font-mono text-[11px] text-muted-foreground">{recallError}</p>
+      )}
+
+      {recall !== null && (
+        <div className="flex flex-col gap-1.5 border-t border-border pt-2">
+          <p className="font-mono text-[11px] text-foreground">{recall.answer}</p>
+          {recall.citations.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 text-[11px]">
+              <span className="text-muted-foreground">Citations:</span>
+              {recall.citations.map((id) => (
+                <Badge key={id} variant="outline" className="font-mono text-[10px]">
+                  {id}
+                </Badge>
+              ))}
+            </div>
+          )}
+          {recall.evidenceQuotes.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {recall.evidenceQuotes.slice(0, 8).map((q, i) => (
+                <li
+                  key={`${q.recordId}-${q.label}-${i}`}
+                  className="font-mono text-[11px] text-muted-foreground"
+                >
+                  <span className="text-foreground">{q.label}</span>
+                  {" — "}
+                  {q.text}
+                  {" · "}
+                  <span className="tok">{q.recordId}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

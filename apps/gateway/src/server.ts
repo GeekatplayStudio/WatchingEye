@@ -28,6 +28,7 @@ import {
 } from "./dataset.js";
 import { createDatasetStore } from "./vector-db.js";
 import { applyActiveIntent } from "./intent-apply.js";
+import { recallFromRecords } from "./recall.js";
 
 /** Options for building the server. */
 export interface ServerOptions {
@@ -286,6 +287,17 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     const n = Math.min(Number(limit ?? 50) || 50, 500);
     const records = await datasetStore.search(q ?? "", n);
     return { records };
+  });
+
+  /**
+   * Grounded NL recall: multi-term keyword + optional yesterday/today window.
+   * Template answer with citations ⊆ retrieved ids (no LLM).
+   */
+  app.get("/api/dataset/recall", async (req) => {
+    const { q, limit } = req.query as { q?: string; limit?: string };
+    const n = Math.min(Number(limit ?? 20) || 20, 100);
+    const all = await datasetStore.getAll(500);
+    return recallFromRecords(all, q ?? "", n);
   });
 
   /** Cosine nearest neighbours over enrolled appearance vectors. */

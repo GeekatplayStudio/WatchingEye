@@ -263,6 +263,16 @@ describe("activeIntent pipeline gating", () => {
     });
     expect(similar.statusCode).toBe(200);
     expect(similar.json().records[0].id).toBe(search.json().records[0].id);
+
+    const recall = await app.inject({
+      method: "GET",
+      url: "/api/dataset/recall?q=person&limit=10",
+    });
+    expect(recall.statusCode).toBe(200);
+    expect(recall.json().citations.length).toBeGreaterThan(0);
+    expect(recall.json().answer).toContain("record");
+    expect(recall.json().evidenceQuotes.length).toBeGreaterThan(0);
+
     await app.close();
   });
 

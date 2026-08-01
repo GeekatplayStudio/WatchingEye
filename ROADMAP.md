@@ -24,7 +24,8 @@ closing them before more Phase 6 depth.
 | P1 | **2.4** Event replay UI | ~~no past-event pipeline replay~~ ✅ select + path + provenance (no pixel retention) |
 | P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
-| P2 | **2.1c / 6.3** pgvector | ~~extension unused~~ ✅ `dataset_events` + DINOv2 384-d on enroll; text RAG (2.1c) / NL recall (6.4) still open |
+| P2 | **2.1c / 6.3** pgvector | dataset DINOv2 ✅; text semantic RAG still open |
+| P2 | **6.4** NL recall | ~~stub search only~~ ✅ grounded keyword recall + quotes; text-embed multimodal still open |
 | P2 | **3.4** Split MCP servers | One read-only MCP baseline; not Camera/Timeline/Alert |
 
 ---
@@ -114,8 +115,11 @@ closing them before more Phase 6 depth.
 
 ### Step 2.1c — RAG grounding (partial)
 - [x] `KeywordRetriever` + `verifyGrounded`
-- [ ] pgvector-backed semantic retriever (text embeddings — appearance
-      vectors in `dataset_events` are DINOv2 image descriptors, not text RAG)
+- [x] Live grounded keyword recall path — gateway `recall.ts` +
+      `GET /api/dataset/recall` (multi-term score, yesterday/today window,
+      template answer, citations ⊆ retrieved, evidence quotes)
+- [ ] pgvector-backed **text** semantic retriever (DINOv2 appearance
+      vectors are not text RAG; still open)
 
 ### Step 2.2 — VLM scene analysis (partial)
 - [x] Gated classify path: snapshot → VLM → guardrails → identity
@@ -266,9 +270,12 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 - Note: snapshot *bytes* still not retained (2.4 policy); only vectors +
   refs. Text semantic RAG remains Step 2.1c / 6.4.
 
-### Step 6.4 — Natural language recall & multimodal search ⛔ not started
-- [ ] Grounded queries over dataset (`golden retriever yesterday`, plate lookup)
-- Note: in-memory keyword `DatasetStore.search` is a stub only.
+### Step 6.4 — Natural language recall & multimodal search (partial)
+- [x] Grounded queries over dataset (plate / breed keywords, `yesterday` /
+      `today` window) — `GET /api/dataset/recall` + dashboard quotes in
+      Active Tracking panel
+- [ ] Text-embedding / CLIP multimodal semantic search
+- Note: keyword + appearance-NN (`/similar`) only; no text vector column yet.
 
 ### Step 6.5 — Live active tracking monitor (partial)
 - [x] Active tracking panel on console (NL quick-add → settings)
@@ -287,10 +294,12 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
 8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP / text RAG still open)
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅ (CLIP breed/color + Paddle still open)
-10. **6.4 / 2.1c** — NL recall + text semantic retriever ← **next**
-11. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
-12. **2.2 latency** — GPU benchmark when hardware is available
-13. **6.2 remaining** — CLIP attrs / Paddle-LPR when needed
+10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
+11. **6.5** — live dataset count / intent metrics ← **next**
+12. **2.1c remaining** — text embedding semantic retriever
+13. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
+14. **2.2 latency** — GPU benchmark when hardware is available
+15. **6.2 remaining** — CLIP attrs / Paddle-LPR when needed
 
 ---
 
