@@ -85,18 +85,20 @@ graph TD
       evidence JSONB NOT NULL,
       descriptors JSONB,
       snapshot_ref TEXT NOT NULL,
-      embedding vector(384),          -- DINOv2-small (not CLIP-512)
+      embedding vector(384),          -- DINOv2-small appearance
+      text_embedding vector(768),     -- nomic / stub text RAG
+      clip_embedding vector(512),     -- CLIP ViT-B/32 multimodal
       embed_model TEXT,
       provenance JSONB NOT NULL
   );
   ```
-- **Status (partial):** `CREATE EXTENSION vector` + `dataset_events` migrate;
-  classify enroll best-effort embeds via orchestrator `/embed` and persists
-  provenance; in-memory cosine search always works; Postgres path when
-  `DATABASE_URL` is set. CLIP/text RAG and NL recall (6.4) still open.
+- **Status (partial):** migrate + memory fallback; enroll best-effort
+  `/embed`, `/text-embed`, `/clip-embed`. Soft-null when towers missing.
 
 ### 4. Natural Language Recall & Grounded RAG Search
-- Planned: hybrid vector + SQL recall with `verifyGrounded` (keyword RAG exists).
+- Hybrid keyword ∪ nomic text-NN ∪ CLIP-NN via `GET`/`POST /api/dataset/recall`
+  with `verifyGrounded` citations. CLIP text queries use optional
+  `scripts/clip-text-embed.py`; image queries use vision ONNX.
 
 ### 5. Live Active Tracking Monitor
 - Console panel scaffold exists; NL quick-add → engine broadcast remains ROADMAP 6.5.

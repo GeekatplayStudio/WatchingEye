@@ -25,7 +25,7 @@ closing them before more Phase 6 depth.
 | P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
 | P2 | **2.1c / 6.3** pgvector | DINOv2 appearance ✅; text semantic RAG ✅ (`text_embedding` 768) |
-| P2 | **6.4** NL recall | grounded keyword ✅; CLIP multimodal still open |
+| P2 | **6.4** NL recall | grounded keyword ✅; CLIP multimodal ✅ (soft) |
 | P2 | **3.4** Split MCP servers | One read-only MCP baseline; not Camera/Timeline/Alert |
 
 ---
@@ -290,15 +290,18 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
       fallback + `POST /api/dataset/similar` for cosine lookup
 - [ ] CLIP / open-vocab attribute vectors alongside appearance
 - Note: snapshot *bytes* still not retained (2.4 policy); only vectors +
-  refs. Text semantic RAG remains Step 2.1c / 6.4.
+  refs. CLIP multimodal search is Step 6.4 (separate `clip_embedding`).
 
 ### Step 6.4 — Natural language recall & multimodal search (partial)
 - [x] Grounded queries over dataset (plate / breed keywords, `yesterday` /
       `today` window) — `GET /api/dataset/recall` + dashboard quotes in
       Active Tracking panel; hybrid keyword ∪ text-NN when text embedder
       is available (Step 2.1c)
-- [ ] CLIP / open-vocab multimodal semantic search
-- Note: text RAG uses nomic/stub embeddings — not CLIP image↔text.
+- [x] CLIP / open-vocab multimodal semantic search —
+      enroll stores optional `clip_embedding vector(512)` (vision ONNX);
+      recall unions CLIP NN (text via `clip-text-embed.py` sidecar, or
+      POST image) with keyword ∪ nomic; soft-fail without weights
+- Note: nomic text RAG remains a separate 768-d channel; CLIP is image↔text.
 
 ### Step 6.5 — Live active tracking monitor ✅
 - [x] Active tracking panel on console (NL quick-add → settings)
@@ -320,13 +323,13 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
 8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP / text RAG still open)
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅
-10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
+10. ~~**6.4** — grounded keyword NL recall~~ ✅
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
 12. ~~**2.1c** — text embedding semantic retriever~~ ✅
 13. ~~**6.2 breed/color open-vocab** — HSV banks + stub~~ ✅
 14. ~~**6.2 CLIP ONNX zero-shot** — optional ViT-B/32 banks~~ ✅
 15. ~~**6.2 Paddle-LPR** — optional Python sidecar + cascade OCR~~ ✅
-16. **6.4 multimodal CLIP search** ← **next**
+16. ~~**6.4 multimodal CLIP search** — enroll CLIP-512 + hybrid recall~~ ✅
 17. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
 18. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
 

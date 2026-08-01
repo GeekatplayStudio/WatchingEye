@@ -49,6 +49,7 @@ interface GroundedRecall {
   query: string;
   since?: string;
   until?: string;
+  channels?: { keyword: boolean; text: boolean; clip: boolean };
 }
 
 interface LiveEventLite {
@@ -334,6 +335,24 @@ export function ActiveTrackingPanel({
       {recall !== null && (
         <div className="flex flex-col gap-1.5 border-t border-border pt-2">
           <p className="font-mono text-[11px] text-foreground">{recall.answer}</p>
+          {recall.channels !== undefined && (
+            <div className="flex flex-wrap items-center gap-1 text-[11px]">
+              <span className="text-muted-foreground">Channels:</span>
+              <Badge variant="outline" className="font-mono text-[10px]">
+                keyword
+              </Badge>
+              {recall.channels.text && (
+                <Badge variant="outline" className="font-mono text-[10px]">
+                  text-nn
+                </Badge>
+              )}
+              {recall.channels.clip && (
+                <Badge variant="outline" className="font-mono text-[10px]">
+                  clip
+                </Badge>
+              )}
+            </div>
+          )}
           {recall.citations.length > 0 && (
             <div className="flex flex-wrap items-center gap-1 text-[11px]">
               <span className="text-muted-foreground">Citations:</span>

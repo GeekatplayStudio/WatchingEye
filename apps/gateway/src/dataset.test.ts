@@ -70,6 +70,22 @@ describe("DatasetStore embeddings", () => {
     expect(hits[0]?.id).toBe("a");
   });
 
+  it("ranks CLIP neighbours separately from DINOv2", async () => {
+    const store = new DatasetStore();
+    const clipA = new Array<number>(512).fill(0);
+    clipA[0] = 1;
+    const clipB = new Array<number>(512).fill(0);
+    clipB[1] = 1;
+    const a = baseRecord("a", unit(0));
+    a.clipEmbedding = clipA;
+    const b = baseRecord("b", unit(1));
+    b.clipEmbedding = clipB;
+    await store.insertRecord(a);
+    await store.insertRecord(b);
+    const hits = await store.searchByClipEmbedding(clipA, 5);
+    expect(hits[0]?.id).toBe("a");
+  });
+
   it("keeps keyword search working alongside vectors", async () => {
     const store = new DatasetStore();
     const plate = baseRecord("plate", unit(2));

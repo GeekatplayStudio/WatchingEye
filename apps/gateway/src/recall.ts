@@ -247,8 +247,8 @@ export function buildGroundedRecall(
 }
 
 /**
- * End-to-end recall: parse time tokens → rank → optionally union text-NN →
- * grounded template.
+ * End-to-end recall: parse time tokens → rank → optionally union text-NN and
+ * CLIP-NN → grounded template.
  */
 export function recallFromRecords(
   all: DatasetRecord[],
@@ -256,13 +256,14 @@ export function recallFromRecords(
   limit = 20,
   now = new Date(),
   textHits: DatasetRecord[] = [],
+  clipHits: DatasetRecord[] = [],
 ): GroundedRecall {
   const { since, until, cleanedQuery } = parseTimeWindow(rawQuery, now);
   const q = cleanedQuery === "" ? rawQuery.trim() : cleanedQuery;
   const ranked = rankRecords(all, q, limit, since, until);
   const seen = new Set(ranked.map((r) => r.id));
   const merged = [...ranked];
-  for (const hit of textHits) {
+  for (const hit of [...textHits, ...clipHits]) {
     if (seen.has(hit.id)) continue;
     if (!inTimeWindow(hit, since, until)) continue;
     seen.add(hit.id);

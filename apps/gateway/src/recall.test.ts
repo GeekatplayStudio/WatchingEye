@@ -91,6 +91,24 @@ describe("grounded recall", () => {
     expect(hits.since).toBeDefined();
   });
 
+  it("unions CLIP hits that keywords miss", () => {
+    const clipOnly = record({
+      id: "clip-1",
+      class: "dog",
+      breedOrModel: "shiba",
+      evidence: [{ label: "clip", description: "visually similar" }],
+    });
+    const hits = recallFromRecords(
+      [record({ id: "kw", class: "car", licensePlate: "ABC-1234" })],
+      "fluffy companion animal",
+      10,
+      new Date(),
+      [],
+      [clipOnly],
+    );
+    expect(hits.citations).toContain("clip-1");
+  });
+
   it("rejects citations outside the retrieved set", () => {
     const retrieved = [record({ id: "ds-1" })];
     expect(() =>

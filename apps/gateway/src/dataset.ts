@@ -13,11 +13,17 @@ export const DATASET_EMBED_DIM = 384;
 /** Text embedding width — match orchestrator `TEXT_EMBED_DIM` (nomic). */
 export const DATASET_TEXT_EMBED_DIM = 768;
 
+/** CLIP ViT-B/32 width — match orchestrator `CLIP_EMBED_DIM`. */
+export const DATASET_CLIP_EMBED_DIM = 512;
+
 /** Default embed model id recorded in provenance when DINOv2 succeeds. */
 export const DATASET_EMBED_MODEL = "dinov2-vits14-onnx";
 
 /** Default text embed model id. */
 export const DATASET_TEXT_EMBED_MODEL = "nomic-embed-text";
+
+/** Default CLIP embed model id. */
+export const DATASET_CLIP_EMBED_MODEL = "clip-vit-b32-onnx";
 
 /** Provenance attached when an enrollment was classified / embedded. */
 export interface DatasetProvenance {
@@ -29,6 +35,8 @@ export interface DatasetProvenance {
   embed_model?: string;
   /** Text embed model when a text vector was stored. */
   text_embed_model?: string;
+  /** CLIP multimodal model when a CLIP vector was stored. */
+  clip_embed_model?: string;
 }
 
 export interface DatasetRecord {
@@ -49,6 +57,9 @@ export interface DatasetRecord {
   /** Text embedding for semantic RAG (not DINOv2). */
   textEmbedding?: number[];
   textEmbedModel?: string;
+  /** CLIP image embedding for multimodal NL/image recall. */
+  clipEmbedding?: number[];
+  clipEmbedModel?: string;
   provenance?: DatasetProvenance;
 }
 
@@ -60,6 +71,8 @@ export interface DatasetStoreLike {
   searchByEmbedding(embedding: number[], limit?: number): Promise<DatasetRecord[]>;
   /** Text-embedding NN for semantic RAG (separate from DINOv2 appearance). */
   searchByTextEmbedding(embedding: number[], limit?: number): Promise<DatasetRecord[]>;
+  /** CLIP embedding NN for multimodal search (separate from DINOv2 / nomic). */
+  searchByClipEmbedding(embedding: number[], limit?: number): Promise<DatasetRecord[]>;
   getAll(limit?: number): Promise<DatasetRecord[]>;
   /** Total enrolled records (for live monitor metrics). */
   count(): Promise<number>;
@@ -133,6 +146,14 @@ export class DatasetStore implements DatasetStoreLike {
     const scored = this.records
       .filter((r) => r.textEmbedding !== undefined && r.textEmbedding.length === embedding.length)
       .map((r) => ({ r, score: cosineSimilarity(embedding, r.textEmbedding!) }))
+      .sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit).map((s) => s.r);
+  }
+
+  public async searchByClipEmbedding(embedding: number[], limit = 50): Promise<DatasetRecord[]> {
+    const scored = this.records
+      .filter((r) => r.clipEmbedding !== undefined && r.clipEmbedding.length === embedding.length)
+      .map((r) => ({ r, score: cosineSimilarity(embedding, r.clipEmbedding!) }))
       .sort((a, b) => b.score - a.score);
     return scored.slice(0, limit).map((s) => s.r);
   }

@@ -19,9 +19,9 @@ import type { DetectionEvent, ObjectClass } from "./events.js";
 import { classify, type ClassifyResult } from "./classify.js";
 import { applyPatch, AVAILABLE_CLASSES, DEFAULT_SETTINGS, SettingsError, type Settings } from "./settings.js";
 import {
+  DATASET_CLIP_EMBED_MODEL,
   DATASET_EMBED_DIM,
   DATASET_EMBED_MODEL,
-  DATASET_TEXT_EMBED_DIM,
   DATASET_TEXT_EMBED_MODEL,
   globalDatasetStore,
   type DatasetProvenance,
@@ -48,6 +48,11 @@ export interface ServerOptions {
   embedder?: (image: string) => Promise<{ values: number[]; model: string } | null>;
   /** Injectable text embedder (orchestrator `/text-embed` proxy). */
   textEmbedder?: (text: string) => Promise<{ values: number[]; model: string } | null>;
+  /** Injectable CLIP embedder (orchestrator `/clip-embed` proxy). */
+  clipEmbedder?: (input: {
+    image?: string;
+    text?: string;
+  }) => Promise<{ values: number[]; model: string } | null>;
 }
 
 /** Body of a classification request from the dashboard. */
@@ -120,6 +125,38 @@ async function defaultTextEmbedder(
   }
 }
 
+async function defaultClipEmbedder(input: {
+  image?: string;
+  text?: string;
+}): Promise<{ values: number[]; model: string } | null> {
+  const hasImage = typeof input.image === "string" && input.image !== "";
+  const hasText = typeof input.text === "string" && input.text.trim() !== "";
+  if (!hasImage && !hasText) return null;
+  try {
+    const res = await fetch(
+      `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/clip-embed`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          hasImage ? { image: input.image } : { text: input.text },
+        ),
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as EmbedResponse;
+    const values = body.embedding?.values;
+    if (!Array.isArray(values) || values.length === 0) return null;
+    return {
+      values,
+      model: body.embedding?.model ?? DATASET_CLIP_EMBED_MODEL,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Flatten enroll fields into text for the semantic embedder. */
 function enrollTextBlob(record: DatasetRecord): string {
   const bits = [
@@ -145,6 +182,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   const classifier = opts.classifier ?? classify;
   const embedder = opts.embedder ?? defaultEmbedder;
   const textEmbedder = opts.textEmbedder ?? defaultTextEmbedder;
+  const clipEmbedder = opts.clipEmbedder ?? defaultClipEmbedder;
   let settings: Settings = { ...DEFAULT_SETTINGS };
   const sockets = new Set<{ send: (data: string) => void }>();
   /** Cameras become known when they send frames — nothing is pre-registered. */
@@ -341,23 +379,60 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   });
 
   /**
-   * Grounded NL recall: multi-term keyword + optional yesterday/today window.
-   * Template answer with citations ⊆ retrieved ids (no LLM).
+   * Grounded NL recall: keyword ∪ nomic text-NN ∪ CLIP multimodal NN.
+   * GET is text-only; POST may include a JPEG `image` for CLIP image→dataset.
    */
+  async function runDatasetRecall(input: {
+    query: string;
+    limit: number;
+    image?: string;
+  }) {
+    const all = await datasetStore.getAll(500);
+    let textHits: DatasetRecord[] = [];
+    let clipHits: DatasetRecord[] = [];
+    const queryVec = await textEmbedder(input.query);
+    if (queryVec !== null) {
+      textHits = await datasetStore.searchByTextEmbedding(queryVec.values, input.limit);
+    }
+    const clipQuery =
+      typeof input.image === "string" && input.image !== ""
+        ? await clipEmbedder({ image: input.image })
+        : await clipEmbedder({ text: input.query });
+    if (clipQuery !== null) {
+      clipHits = await datasetStore.searchByClipEmbedding(clipQuery.values, input.limit);
+    }
+    const recall = recallFromRecords(
+      all,
+      input.query,
+      input.limit,
+      new Date(),
+      textHits,
+      clipHits,
+    );
+    return {
+      ...recall,
+      channels: {
+        keyword: true,
+        text: textHits.length > 0,
+        clip: clipHits.length > 0,
+      },
+    };
+  }
+
   app.get("/api/dataset/recall", async (req) => {
     const { q, limit } = req.query as { q?: string; limit?: string };
     const n = Math.min(Number(limit ?? 20) || 20, 100);
-    const all = await datasetStore.getAll(500);
-    const query = q ?? "";
-    let textHits: DatasetRecord[] = [];
-    const queryVec = await textEmbedder(query);
-    if (queryVec !== null && queryVec.values.length === DATASET_TEXT_EMBED_DIM) {
-      textHits = await datasetStore.searchByTextEmbedding(queryVec.values, n);
-    } else if (queryVec !== null) {
-      // Stub/Ollama dim may differ from 768 in tests — still search memory by length.
-      textHits = await datasetStore.searchByTextEmbedding(queryVec.values, n);
-    }
-    return recallFromRecords(all, query, n, new Date(), textHits);
+    return runDatasetRecall({ query: q ?? "", limit: n });
+  });
+
+  app.post("/api/dataset/recall", async (req) => {
+    const body = req.body as { q?: string; image?: string; limit?: number };
+    const n = Math.min(Number(body.limit ?? 20) || 20, 100);
+    return runDatasetRecall({
+      query: body.q ?? "",
+      limit: n,
+      image: typeof body.image === "string" ? body.image : undefined,
+    });
   });
 
   /** Cosine nearest neighbours over enrolled appearance vectors. */
@@ -498,6 +573,14 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         record.textEmbedding = textEmbedded.values;
         record.textEmbedModel = textEmbedded.model;
         provenance.text_embed_model = textEmbedded.model;
+        record.provenance = provenance;
+      }
+
+      const clipEmbedded = await clipEmbedder({ image });
+      if (clipEmbedded !== null) {
+        record.clipEmbedding = clipEmbedded.values;
+        record.clipEmbedModel = clipEmbedded.model;
+        provenance.clip_embed_model = clipEmbedded.model;
         record.provenance = provenance;
       }
 

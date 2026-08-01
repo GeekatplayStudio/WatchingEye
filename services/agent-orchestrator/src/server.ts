@@ -34,6 +34,10 @@ import {
   type TextEmbedder,
 } from "./text-embed.js";
 import {
+  createDefaultClipEmbedder,
+  type ClipEmbedder,
+} from "./clip-embed.js";
+import {
   createDefaultOpenVocabScorer,
   enrichDescriptorsFromOpenVocab,
   type OpenVocabHit,
@@ -55,11 +59,13 @@ export function buildOrchestrator(
   ocrProvider?: OcrProvider,
   textEmbedder?: TextEmbedder,
   openVocabScorer?: OpenVocabScorer,
+  clipEmbedder?: ClipEmbedder,
 ): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const ocr = ocrProvider ?? createDefaultOcrProvider();
   const textEmbed = textEmbedder ?? createDefaultTextEmbedder();
   const openVocab = openVocabScorer ?? createDefaultOpenVocabScorer();
+  const clipEmbed = clipEmbedder ?? createDefaultClipEmbedder();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -93,6 +99,7 @@ export function buildOrchestrator(
       embedder: embedModelAvailable() ? "dinov2-vits14-onnx" : "unavailable",
       openVocab: openVocab.name,
       ocr: ocr.name,
+      clipEmbed: clipEmbed.name,
     };
   });
 
@@ -179,6 +186,30 @@ export function buildOrchestrator(
     if (result === null) {
       return reply.status(503).send({
         error: "text embedder unavailable",
+        latencyMs: Date.now() - started,
+      });
+    }
+    return { embedding: result, latencyMs: Date.now() - started };
+  });
+
+  /**
+   * CLIP multimodal embed (image and/or text). Soft 503 when the requested
+   * tower is unavailable — gateway treats that as null and keeps keyword/nomic.
+   */
+  app.post("/clip-embed", async (req, reply) => {
+    const body = req.body as { image?: string; text?: string };
+    const started = Date.now();
+    const hasImage = typeof body?.image === "string" && body.image !== "";
+    const hasText = typeof body?.text === "string" && body.text.trim() !== "";
+    if (!hasImage && !hasText) {
+      return reply.status(400).send({ error: "image or text is required" });
+    }
+    const result = hasImage
+      ? await clipEmbed.embedImage(body.image!)
+      : await clipEmbed.embedText(body.text!);
+    if (result === null) {
+      return reply.status(503).send({
+        error: "clip embedder unavailable",
         latencyMs: Date.now() - started,
       });
     }
