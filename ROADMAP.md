@@ -1,8 +1,30 @@
 # WatchingEye Development Roadmap
 
 Hard-defined steps with explicit exit criteria. A step is **done only when
-every exit criterion passes in CI**. No step starts before the previous one
-is done (exceptions require an ADR).
+every exit criterion is checked**. No step starts before the previous one is
+done (exceptions require an ADR).
+
+> **Honesty rule:** a step header is ✅ only if *all* its boxes are [x].
+> Partial work stays unmarked at the step level.
+
+---
+
+## Skipped / technical debt (jumped while later work shipped)
+
+These were left open while Phase 3.5 ReID and Phase 6 UI advanced. Prefer
+closing them before more Phase 6 depth.
+
+| Priority | Step | Gap |
+|----------|------|-----|
+| P0 | **1.5** SQLite object DB | No sqlite/sqlx anywhere; identity + events are memory/Postgres JSONB only |
+| P0 | **1.1** File & USB camera backends | No Rust file/USB `CameraSource`; live path is browser webcam / RTSP |
+| P1 | **1.4** Tracker soak + snapshot fixtures | IoU works; no 100-frame soak / fixture-video snapshot tests in CI |
+| P1 | **2.3** Rules → notify webhook | Rule types exist; no HTTP webhook delivery |
+| P1 | **2.4** Event replay UI | Live evidence yes; no past-event pipeline replay |
+| P1 | **6.1** NL intent → pipeline | Settings/UI work; `datasetEnroll` / `anprEnabled` do **not** gate classify/ANPR yet |
+| P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
+| P2 | **2.1c / 6.3** pgvector | Docker image present; extension + vector columns unused |
+| P2 | **3.4** Split MCP servers | One read-only MCP baseline; not Camera/Timeline/Alert |
 
 ---
 
@@ -25,30 +47,30 @@ is done (exceptions require an ADR).
 
 ## Phase 1 — Single-Camera Edge Detection
 
-### Step 1.1 — File & USB camera backends
+### Step 1.1 — File & USB camera backends ⛔ skipped
 - [ ] `vision-engine --camera file --input sample.mp4` streams frames
 - [ ] Golden-file integration test: fixed video in, fixed frame count out
 - [ ] Frame validator rejects corrupt/truncated frames with typed errors
-- Note: live USB/webcam path works via the dashboard console today; file
-  backend + golden tests remain.
+- Note: browser webcam → engine sample grid works; RTSP ingest exists (3.3).
+  Rust file/USB backends and golden tests do **not**.
 
-### Step 1.2 — Motion detection ✅
+### Step 1.2 — Motion detection (partial)
 - [x] `crates/motion`: background model + blobs, wired into `vision-engine`
 - [x] Static scene reports no motion; localized change does
 - [ ] 1000-frame soak test proving zero detector invocations when static
 
-### Step 1.3 — ONNX YOLO detector ✅ (orchestrator — ADR 0004)
+### Step 1.3 — ONNX YOLO detector (partial — ADR 0004)
 - [x] YOLO11n via `onnxruntime-node`: letterbox, decode, NMS, unit tests
 - [x] Stationary objects named on ~1.2 s cadence; missing model → clean 503
 - [ ] Rust `Detector` trait backend (blocked on MSVC; ADR 0004)
 - [ ] Latency < 100 ms (currently ~490 ms CPU)
 
-### Step 1.4 — Temporal validation + tracker hardening
+### Step 1.4 — Temporal validation + tracker hardening (partial)
 - [x] `tracker::association`: IoU + greedy matching; live engine uses IoU
 - [ ] Snapshot tests of full event streams for 3 fixture videos
 - [ ] Formal soak: two people keep distinct UUIDs across 100 frames
 
-### Step 1.5 — SQLite object database
+### Step 1.5 — SQLite object database ⛔ skipped
 - [ ] Engine restart resumes with prior object history intact
 - [ ] Timeline query: all events for object UUID in < 10 ms
 - [ ] Migration test: v0 → current on a seeded database
@@ -61,29 +83,30 @@ is done (exceptions require an ADR).
 - [x] Next.js console: live feed, evidence, tuning, pipeline, WebSocket
 - [x] Gateway: settings API, Postgres/memory event store, AI-free proxy
 - [x] LangGraph Super Agent DAG + zod guardrails
-- [x] MCP server (read-only) baseline
+- [x] MCP server (read-only) baseline (`list_cameras`, `recent_events`, `get_settings`)
 
-### Step 2.1 — Ollama / LLM abstraction ✅
+### Step 2.1 — Ollama / LLM abstraction (partial)
 - [x] `LlmProvider` + Ollama + stub; provenance on every response
 - [ ] Rust-side provider for the engine (currently TS only)
 
 ### Step 2.1b — AI-safety screening ✅
 - [x] `guardrails::safety` + orchestrator `screen.ts` mirror
 
-### Step 2.1c — RAG grounding ✅ (keyword half)
+### Step 2.1c — RAG grounding (partial)
 - [x] `KeywordRetriever` + `verifyGrounded`
-- [ ] pgvector-backed semantic retriever
+- [ ] pgvector-backed semantic retriever (compose image unused for vectors)
 
-### Step 2.2 — VLM scene analysis
+### Step 2.2 — VLM scene analysis (partial)
 - [x] Gated classify path: snapshot → VLM → guardrails → identity
 - [ ] End-to-end latency < 300 ms gate-open → decision (GPU benchmark)
 - [ ] Fixture-image golden decision test in CI
 
-### Step 2.3 — Rule engine expansion + actions
+### Step 2.3 — Rule engine expansion + actions ⛔ skipped
 - [ ] Zones, time windows, notify webhook end-to-end
 - [ ] Rule evaluation property test for determinism
+- Note: `crates/rules` has types + stub pipeline demo; no live webhook.
 
-### Step 2.4 — Zero-black-box dashboard
+### Step 2.4 — Zero-black-box dashboard (partial)
 - [x] Live evidence chips, refusal reasons, identity verdicts on console
 - [ ] Replay: select a past event, see exact pipeline path taken
 - [ ] Every decision in the DB fully reconstructable in the UI
@@ -92,37 +115,36 @@ is done (exceptions require an ADR).
 
 ## Phase 3 — Multi-Camera, Edge Nodes, MCP, Appearance ReID
 
-### Step 3.1 — ESP32 firmware (capture/stream only)
+### Step 3.1 — ESP32 firmware ⛔ skipped
 - [ ] Frames streamed to hub over WiFi; heartbeat; RAM/watchdog/OTA criteria
+- Note: `edge/esp32/README.md` only — no firmware sources.
 
-### Step 3.2 — Raspberry Pi edge mode
+### Step 3.2 — Raspberry Pi edge mode (partial)
 - [x] `edge-node` binary (~309 KB) wire-compatible with vision-engine
 - [ ] Pi cross-compile in CI; offline SQLite cache + sync-on-reconnect
 
 ### Step 3.3 — RTSP/IP camera backend (in progress)
 - [x] RTSP connect/disconnect + Discover UI; frames into the real pipeline
-- [ ] Exit: 4 simultaneous RTSP streams on the hub; per-camera config store
+- [ ] Exit: 4 simultaneous RTSP streams proven; durable per-camera config store
 
-### Step 3.4 — MCP servers
-- [ ] Camera / Timeline / Alert MCP servers; read-only client demo
+### Step 3.4 — MCP servers (partial)
+- [x] Single read-only MCP baseline (2.0)
+- [ ] Dedicated Camera / Timeline / Alert MCP servers + client demo
 
 ### Step 3.5 — Hybrid appearance ReID + multi-camera identity ✅
-Inspired by REMIND (DINOv2 descriptors, dual-bank memory, ambiguity gating,
-Hungarian assignment) — integrated without replacing the deterministic
-motion → IoU → TriggerGate spine.
+Integrated without replacing motion → IoU → TriggerGate. (Shipped ahead of
+several Phase 1–2 items — see debt table.)
 
-- [x] DINOv2-small ONNX embedder in orchestrator (`/embed`, ADR 0004 pattern)
-- [x] Hybrid identity: weighted attributes ⊕ appearance cosine; plate refute wins
-- [x] Dual-bank work/stable appearance memory; Strong/Ambiguous/Weak update gating
-- [x] Tentative → Confirmed identity lifecycle
-- [x] Hungarian `observe_batch` + `POST /api/identify/batch`; detect opt-in
-      `{ identify: true }`
-- [x] Camera-agnostic gallery; `crossed_camera` / `cameras_seen` on outcomes
-- [x] `GET /api/identities/{id}` timeline; dashboard **Identities** page
-- [x] Docs: architecture overview, identity docs, install-models + `export-dinov2.py`
+- [x] DINOv2-small ONNX embedder in orchestrator (`/embed`)
+- [x] Hybrid identity: attributes ⊕ appearance cosine; plate refute wins
+- [x] Dual-bank work/stable memory; Strong/Ambiguous/Weak gating
+- [x] Tentative → Confirmed lifecycle
+- [x] Hungarian `observe_batch` + `/api/identify/batch`; detect `{ identify: true }`
+- [x] Camera-agnostic gallery; `crossed_camera` / `cameras_seen`
+- [x] `GET /api/identities/{id}`; dashboard Identities page
+- [x] Docs + `export-dinov2.py` / install-models hooks
 
-Optional follow-ups (not blocking): neighbor co-occurrence graphs, multi-prototype
-banks, DINOv3 upgrade, SigLIP open-vocab attributes (Phase 6).
+Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
 
 ---
 
@@ -142,28 +164,28 @@ banks, DINOv3 upgrade, SigLIP open-vocab attributes (Phase 6).
 - [x] rAF capture, velocity overlay, heading/speed, monocular distance
 - [ ] Binary frame transport; face-specific aim; published e2e latency budget
 
-### Step A.2b — Two-app split ✅
+### Step A.2b — Two-app split (partial)
 - [x] Desktop hub + `edge-node` (309 KB); hot-path and binary size wins
 - [ ] Pi CI cross-compile gate; ESP32 `no_std` port
 
-### Step A.3 — Device transport
+### Step A.3 — Device transport ⛔ not started
 - [ ] WiFi / BLE / serial `transport` crate; ESP32 command path; deadman
 
-### Step A.4 — Logic designer
+### Step A.4 — Logic designer ⛔ not started
 - [ ] Node-graph editor + deterministic Rust eval + guardrails on outputs
 
-### Step A.5 — Audio input
+### Step A.5 — Audio input ⛔ not started
 - [ ] DoA “look toward sound”; wake-word into the logic graph
 
 ---
 
 ## Phase 4.5 — Voice Module
 
-### Step V.1 — Speech recognition (contracts done)
+### Step V.1 — Speech recognition (contracts only)
 - [x] `VoiceCommand` schema + reject-unknown parse (tested)
 - [ ] Whisper binding; guardrail routing; audio-event detection
 
-### Step V.2 — Voice response (TTS)
+### Step V.2 — Voice response (contracts only)
 - [x] `renderSpeech` from validated facts only (tested)
 - [ ] Piper TTS; two-way RAG ask/answer; Voice page live loop
 
@@ -177,28 +199,44 @@ banks, DINOv3 upgrade, SigLIP open-vocab attributes (Phase 6).
 
 ## Phase 6 — NL Dynamic Tracking, Deep Vision & Vector Dataset
 
-Builds on Step 3.5 appearance identity. See ADR 0005 (partially implemented).
+Builds on Step 3.5. See ADR 0005 (partially implemented).
 
-### Step 6.1 — Natural language intent & target registration ✅
+### Step 6.1 — Natural language intent & target registration (partial)
+UI/settings path works; **pipeline gating does not**.
+
 - [x] `nl-parser.ts` + `/parse-intent` + gateway `/api/nlp/target`
-- [x] `"track all dogs"` → `dog` + `dataset_enroll` / breed+color attributes
-- [x] `"track cars and capture plates"` → `car` + `anpr_ocr` / license_plate
-- [x] Settings store `activeIntent`; WebSocket broadcast on apply (UI shows `broadcastMs`)
-- [x] Active tracking panel listens for settings push and refreshes targets live
+- [x] Parse `"track all dogs"` → `dog` + `dataset_enroll` flags (parser)
+- [x] Parse `"track cars and capture plates"` → `car` + `anpr_ocr` (parser)
+- [x] Settings `activeIntent` + WebSocket broadcast; panel refreshes live
+- [ ] `datasetEnroll` / `anprEnabled` / attributes actually change classify,
+      ANPR, and dataset write behavior (today: stored + displayed only)
 
-### Step 6.2 — Deeper recognition (ANPR & fine-grained)
-- [x] Regex ANPR helper + VLM descriptors (baseline)
-- [ ] Real OCR ANPR; breed/color extractor with confidence; `ocr_unconfirmed`
+### Step 6.2 — Deeper recognition (ANPR & fine-grained) (partial)
+- [x] Regex ANPR helper + unit tests (`anpr.ts`) — **not wired** into classify
+- [ ] Call ANPR (or VLM plate path) from live classify; surface `ocr_unconfirmed`
+- [ ] Real OCR ANPR; breed/color extractor with confidence
 
-### Step 6.3 — Multimodal vector dataset auto-builder
+### Step 6.3 — Multimodal vector dataset auto-builder ⛔ not started
 - [ ] Persist gated events + DINOv2/CLIP vectors into pgvector with provenance
 
-### Step 6.4 — Natural language recall & multimodal search
+### Step 6.4 — Natural language recall & multimodal search ⛔ not started
 - [ ] Grounded queries over dataset (`golden retriever yesterday`, plate lookup)
+- Note: in-memory keyword `DatasetStore.search` is a stub only.
 
-### Step 6.5 — Live active tracking monitor
-- [x] Active tracking panel scaffold on console
-- [ ] NL quick-add → immediate monitor; live dataset count
+### Step 6.5 — Live active tracking monitor (partial)
+- [x] Active tracking panel on console (NL quick-add → settings)
+- [ ] Live dataset count; intent-driven monitoring metrics
+
+---
+
+## Recommended catch-up order
+
+1. **6.1 remaining** — wire `activeIntent` into classify / dataset / ANPR path  
+2. **1.5** — SQLite (or durable) object + identity persistence  
+3. **1.1** — file camera backend + golden fixture test  
+4. **2.3** — notify webhook from rules  
+5. **1.4 / 2.2** — soak + golden VLM CI gates  
+6. Then resume Phase 6.2–6.3 depth
 
 ---
 
