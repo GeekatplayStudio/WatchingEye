@@ -82,8 +82,27 @@ else
     echo "Install Python3, then: python3 scripts/export-dinov2.py"
 fi
 
+# --- CLIP open-vocab (optional) ---
+step "Exporting CLIP ViT-B/32 open-vocab assets (optional)"
+CLIP_ONNX="$MODELS/vision/clip_vit_b32_vision.onnx"
+CLIP_TEXT="$MODELS/vision/open_vocab_text_embeds.json"
+if [ -f "$CLIP_ONNX" ] && [ -f "$CLIP_TEXT" ]; then
+    echo "Already present: CLIP open-vocab assets"
+elif command -v python3 >/dev/null 2>&1; then
+    python3 -m pip install --quiet torch transformers onnx
+    python3 "$ROOT/scripts/export-open-vocab-clip.py"
+    if [ -f "$CLIP_ONNX" ] && [ -f "$CLIP_TEXT" ]; then
+        echo "Saved CLIP open-vocab assets"
+    else
+        echo "CLIP export failed — breed zero-shot stays on stub/HSV."
+    fi
+else
+    echo "Python3 not found - skipping CLIP export (HSV open-vocab still works)."
+fi
+
 printf '\n\033[32mModel install complete. Inventory:\033[0m\n'
 echo "  Ollama:  qwen2.5vl:7b (VLM), llama3.2:3b (LLM)"
 echo "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
 echo "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
 echo "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"
+echo "  OpenVocab: models/vision/clip_vit_b32_vision.onnx (+ text embeds, optional)"

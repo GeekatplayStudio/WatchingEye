@@ -87,8 +87,30 @@ if (Test-Path $dino) {
     }
 }
 
+# --- CLIP open-vocab (optional; HSV colour scoring works without it) ---
+Write-Step "Exporting CLIP ViT-B/32 open-vocab assets (optional)"
+$clipOnnx = "$models\vision\clip_vit_b32_vision.onnx"
+$clipText = "$models\vision\open_vocab_text_embeds.json"
+if ((Test-Path $clipOnnx) -and (Test-Path $clipText)) {
+    Write-Host "Already present: CLIP open-vocab assets"
+} else {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -eq $python) {
+        Write-Host "Python not found - skipping CLIP export (HSV open-vocab still works)." -ForegroundColor Yellow
+    } else {
+        pip install --quiet torch transformers onnx
+        python "$root\scripts\export-open-vocab-clip.py"
+        if ((Test-Path $clipOnnx) -and (Test-Path $clipText)) {
+            Write-Host "Saved CLIP open-vocab assets"
+        } else {
+            Write-Host "CLIP export failed — breed zero-shot stays on stub/HSV." -ForegroundColor Yellow
+        }
+    }
+}
+
 Write-Host "`nModel install complete. Inventory:" -ForegroundColor Green
 Write-Host "  Ollama:  qwen2.5vl:7b (VLM), llama3.2:3b (LLM)"
 Write-Host "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
 Write-Host "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
 Write-Host "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"
+Write-Host "  OpenVocab: models/vision/clip_vit_b32_vision.onnx (+ text embeds, optional)"

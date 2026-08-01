@@ -9,6 +9,10 @@
  */
 import jpeg from "jpeg-js";
 import type { ObservedDescriptor } from "./vlm.js";
+import {
+  clipOpenVocabAvailable,
+  OnnxClipOpenVocabScorer,
+} from "./open-vocab-clip.js";
 
 /** Provenance tag for histogram colour scoring. */
 export const OPEN_VOCAB_COLOR_MODEL = "open-vocab-hsv-v1";
@@ -276,12 +280,20 @@ export function enrichDescriptorsFromOpenVocab(
 }
 
 /**
- * Default scorer: HSV colour always (auto); stub breeds when env=stub; off disables.
+ * Default scorer: CLIP ONNX + HSV when assets exist; HSV alone otherwise;
+ * stub/off via `WATCHINGEYE_OPEN_VOCAB`.
  */
 export function createDefaultOpenVocabScorer(): OpenVocabScorer {
   const mode = (process.env.WATCHINGEYE_OPEN_VOCAB ?? "auto").toLowerCase();
   if (mode === "off") return new NoopOpenVocabScorer();
   if (mode === "stub") return new StubOpenVocabScorer();
+  if (mode === "hsv") return new ColorHistogramScorer();
+  if (clipOpenVocabAvailable()) {
+    return new CompositeOpenVocabScorer([
+      new OnnxClipOpenVocabScorer(),
+      new ColorHistogramScorer(),
+    ]);
+  }
   return new ColorHistogramScorer();
 }
 

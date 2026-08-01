@@ -273,9 +273,11 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
       `open-vocab.ts`: HSV colour histogram banks (`fur_color` /
       `vehicle_color`) + stub breed path (`WATCHINGEYE_OPEN_VOCAB=stub`);
       merges into descriptors above a confidence floor without overwriting
-      VLM keys; not full CLIP/SigLIP weights yet
+      VLM keys
+- [x] Full CLIP ViT-B/32 zero-shot ONNX banks for breed/color —
+      `export-open-vocab-clip.py` + `OnnxClipOpenVocabScorer` (soft-fail
+      without weights; composite with HSV when assets present)
 - [ ] Dedicated Paddle/Fast-LPR plate detector when generic OCR misses
-- [ ] Full CLIP/SigLIP zero-shot ONNX banks for breed (weights optional)
 
 ### Step 6.3 — Multimodal vector dataset auto-builder (partial)
 - [x] Persist gated enrollments + DINOv2 vectors into pgvector with
@@ -317,10 +319,11 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
 12. ~~**2.1c** — text embedding semantic retriever~~ ✅
-13. ~~**6.2 breed/color open-vocab** — HSV banks + stub~~ ✅ (CLIP ONNX + Paddle still open)
-14. **6.2 / 6.4 remaining** — CLIP ONNX / Paddle-LPR / multimodal CLIP ← **next**
-15. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
-16. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
+13. ~~**6.2 breed/color open-vocab** — HSV banks + stub~~ ✅
+14. ~~**6.2 CLIP ONNX zero-shot** — optional ViT-B/32 banks~~ ✅
+15. **6.2 Paddle-LPR** / **6.4 multimodal CLIP search** ← **next**
+16. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
+17. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
 
 ---
 
