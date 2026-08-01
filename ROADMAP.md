@@ -34,7 +34,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 |----------|------|-----|
 | P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
 | P2 | **2.1** Rust LLM provider | Orchestrator TS only |
-| P2 | **3.2** edge offline cache | Pi CI gate ✅; SQLite cache + sync-on-reconnect still open |
+| P2 | **3.2** edge offline cache | Pi CI + SQLite gate-open cache + hub sync ✅; not a live-Pi smoke |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
 | P2 | **3.4** Split MCP | One read-only baseline; not Camera/Timeline/Alert servers |
 | P2 | **V.1 / V.2** Voice | Schemas/tests only; no Whisper/Piper live loop |
@@ -204,11 +204,15 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
       smoke test when the board lands; WatchingEye firmware follows.
 
 ### Step 3.2 — Raspberry Pi edge mode (partial)
-- [x] `edge-node` binary (~309 KB) wire-compatible with vision-engine
+- [x] `edge-node` binary wire-compatible with vision-engine
 - [x] Pi cross-compile gate in CI — `edge-node-pi` job builds
       `aarch64-unknown-linux-gnu` with `--profile edge` (see `.github/workflows/ci.yml`
-      + `.cargo/config.toml`); soft size ceiling 1 MiB; not a live-Pi smoke test
-- [ ] Offline SQLite cache + sync-on-reconnect
+      + `.cargo/config.toml`); soft size ceiling 3 MiB (bundled SQLite); not a
+      live-Pi smoke test
+- [x] Offline SQLite cache + sync-on-reconnect — `cache.rs` /
+      `EDGE_CACHE_DB`; gate-open metadata only (no frames/AI); hub drain via
+      `EDGE_HUB_URL` → gateway `POST /api/edge/sync` (model `edge-cache`);
+      soft-fail when hub down; `POST /api/sync` + `/health` pending count
 
 ### Step 3.3 — RTSP/IP camera backend ✅
 - [x] RTSP connect/disconnect + Discover UI; frames into the real pipeline
@@ -382,7 +386,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 23. ~~**ESP32 lab board** — Freenove ESP32-S3 CAM docs + board profile~~ ✅ (encode when hardware arrives)
 24. ~~**Pi CI** — `edge-node` aarch64 cross-compile gate in GitHub Actions~~ ✅
 25. ~~**6.3 attr vectors** — `attr_embedding` bank text alongside appearance~~ ✅
-26. **edge offline cache / ESP32 firmware encode** ← opportunistic next
+26. ~~**edge offline cache** — SQLite + hub sync (gate-open metadata)~~ ✅
+27. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
 
 ---
 

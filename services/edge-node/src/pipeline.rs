@@ -52,6 +52,43 @@ struct Outcome<'a> {
     rejected_reason: Option<String>,
 }
 
+/// Snapshot of a track at gate-open — durable offline cache payload.
+///
+/// # Examples
+///
+/// ```ignore
+/// let snap = TriggerSnapshot { track_id: 1, bbox, motion, seen_frames: 3 };
+/// ```
+#[derive(Debug, Clone, Serialize)]
+pub struct TriggerSnapshot {
+    /// Local track id.
+    pub track_id: u32,
+    /// Bounding box at trigger.
+    pub bbox: BoundingBox,
+    /// Motion vector at trigger.
+    pub motion: MotionVector,
+    /// Consecutive seen frames when the gate opened.
+    pub seen_frames: u32,
+}
+
+/// JSON outcome plus trigger snapshots for the offline cache.
+///
+/// # Examples
+///
+/// ```ignore
+/// let result = node.handle(body)?;
+/// assert!(result.json.contains("frame"));
+/// ```
+#[derive(Debug)]
+pub struct FrameResult {
+    /// Wire JSON (desktop-compatible).
+    pub json: String,
+    /// Frame counter.
+    pub frame: u64,
+    /// Tracks that opened the gate on this frame.
+    pub triggers: Vec<TriggerSnapshot>,
+}
+
 /// Single-camera pipeline state.
 pub struct Node {
     background: BackgroundModel,
@@ -82,7 +119,7 @@ impl Node {
     /// Returns a short message for undecodable JSON; pipeline-level
     /// rejections (wrong sample count) are reported inside a `200` body the
     /// same way the desktop engine does it.
-    pub fn handle(&mut self, body: &str) -> Result<String, &'static str> {
+    pub fn handle(&mut self, body: &str) -> Result<FrameResult, &'static str> {
         let req: FrameRequest = serde_json::from_str(body).map_err(|_| "malformed request")?;
         self.frame += 1;
         let dt = req.dt_secs.unwrap_or(0.1).clamp(0.005, 0.5);
@@ -100,7 +137,12 @@ impl Node {
                     req.samples.len()
                 )),
             };
-            return serde_json::to_string(&outcome).map_err(|_| "serialize failed");
+            let json = serde_json::to_string(&outcome).map_err(|_| "serialize failed")?;
+            return Ok(FrameResult {
+                json,
+                frame: self.frame,
+                triggers: Vec::new(),
+            });
         }
 
         let frame = Frame {
@@ -119,11 +161,17 @@ impl Node {
                 servo: self.head.update(None, dt),
                 rejected_reason: Some("frame size changed; relearning".into()),
             };
-            return serde_json::to_string(&outcome).map_err(|_| "serialize failed");
+            let json = serde_json::to_string(&outcome).map_err(|_| "serialize failed")?;
+            return Ok(FrameResult {
+                json,
+                frame: self.frame,
+                triggers: Vec::new(),
+            });
         };
 
         let regions = extract_into(&mask, MIN_BLOB_AREA, &mut self.scratch);
         let triggered = self.associate(&regions, req.width, fps);
+        let triggers = self.snapshots_for(&triggered);
 
         // Aim at the best-confirmed, largest region.
         let target = self
@@ -152,7 +200,27 @@ impl Node {
             servo,
             rejected_reason: None,
         };
-        serde_json::to_string(&outcome).map_err(|_| "serialize failed")
+        let json = serde_json::to_string(&outcome).map_err(|_| "serialize failed")?;
+        Ok(FrameResult {
+            json,
+            frame: self.frame,
+            triggers,
+        })
+    }
+
+    fn snapshots_for(&self, triggered: &[u32]) -> Vec<TriggerSnapshot> {
+        triggered
+            .iter()
+            .filter_map(|id| {
+                let track = self.tracks.iter().find(|t| t.id == *id)?;
+                Some(TriggerSnapshot {
+                    track_id: track.id,
+                    bbox: track.bbox,
+                    motion: track.motion,
+                    seen_frames: track.seen_frames,
+                })
+            })
+            .collect()
     }
 
     /// Match regions to tracks, age the unmatched, open gates.
@@ -243,21 +311,25 @@ mod tests {
     #[test]
     fn reports_a_sample_mismatch_inside_the_outcome() {
         let out = Node::new().handle(&frame_json(&[1, 2, 3])).unwrap();
-        assert!(out.contains("rejected_reason"));
-        assert!(out.contains("expected 400 samples"));
+        assert!(out.json.contains("rejected_reason"));
+        assert!(out.json.contains("expected 400 samples"));
     }
 
     #[test]
     fn tracks_a_moving_square_and_opens_the_gate_once() {
         let mut node = Node::new();
         node.handle(&frame_json(&vec![10u8; 400])).unwrap();
-        let mut triggered_total = 0;
+        let mut snaps = 0;
         for step in 0..6u32 {
             let out = node.handle(&frame_json(&square(step * 2))).unwrap();
-            let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
-            triggered_total += parsed["triggered"].as_array().unwrap().len();
+            snaps += out.triggers.len();
+            let parsed: serde_json::Value = serde_json::from_str(&out.json).unwrap();
+            assert_eq!(
+                parsed["triggered"].as_array().unwrap().len(),
+                out.triggers.len()
+            );
         }
-        assert_eq!(triggered_total, 1, "one object, one gate opening");
+        assert_eq!(snaps, 1, "one object, one gate opening");
     }
 
     #[test]
@@ -269,7 +341,7 @@ mod tests {
         }
         let mut last = String::new();
         for _ in 0..60 {
-            last = node.handle(&frame_json(&vec![10u8; 400])).unwrap();
+            last = node.handle(&frame_json(&vec![10u8; 400])).unwrap().json;
         }
         let parsed: serde_json::Value = serde_json::from_str(&last).unwrap();
         assert_eq!(parsed["servo"]["pan_deg"].as_f64().unwrap(), 90.0);

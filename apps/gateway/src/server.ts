@@ -9,6 +9,7 @@
  * - `GET  /api/events/:id` — one stored event for replay UI
  * - `GET  /api/settings` / `PUT /api/settings` — tuning knobs
  * - `POST /api/classify` — classify a gated event (proxied to orchestrator)
+ * - `POST /api/edge/sync` — AI-free ingest of edge-node offline cache drains
  * - `GET  /ws` — live event stream
  */
 import Fastify, { type FastifyInstance } from "fastify";
@@ -33,6 +34,7 @@ import {
 import { createDatasetStore } from "./vector-db.js";
 import { applyActiveIntent } from "./intent-apply.js";
 import { recallFromRecords } from "./recall.js";
+import { ingestEdgeSync, type EdgeSyncBody } from "./edge-sync.js";
 
 /** Options for building the server. */
 export interface ServerOptions {
@@ -319,6 +321,28 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   });
 
   app.get("/api/cameras", async () => ({ cameras: [...cameras.values()] }));
+
+  /**
+   * Edge-node offline cache drain. No AI — maps gate-open metadata into
+   * stored events and ACKs ids so the Pi can delete pending rows.
+   */
+  app.post("/api/edge/sync", async (req, reply) => {
+    const body = req.body as EdgeSyncBody;
+    if (!Array.isArray(body?.events)) {
+      return reply.status(400).send({ error: "events array is required" });
+    }
+    const { accepted, inserted } = await ingestEdgeSync(store, body);
+    for (const event of inserted) {
+      cameras.set(event.cameraId, {
+        id: event.cameraId,
+        kind: "edge",
+        location: event.cameraId,
+      });
+      const payload = JSON.stringify({ type: "event", event });
+      for (const socket of sockets) socket.send(payload);
+    }
+    return { accepted };
+  });
 
   app.get("/api/events/recent", async (req) => {
     const { limit } = req.query as { limit?: string };

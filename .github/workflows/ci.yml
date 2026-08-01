@@ -54,7 +54,9 @@ jobs:
           SIZE=$(stat -c%s "$BIN")
           echo "edge-node aarch64 (profile edge) size: ${SIZE} bytes"
           # Soft ceiling — catch accidental dependency bloat; not the 309 KB claim.
-          test "$SIZE" -lt 1048576
+          # Soft ceiling: bundled SQLite (offline cache, ROADMAP 3.2) grows the
+          # binary past the old 1 MiB target; keep a honest Pi-class budget.
+          test "$SIZE" -lt 3145728
 
   gateway:
     runs-on: ubuntu-latest

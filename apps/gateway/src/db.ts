@@ -29,6 +29,7 @@ export class MemoryEventStore implements EventStore {
   private events: DetectionEvent[] = [];
 
   async insertEvent(event: DetectionEvent): Promise<void> {
+    if (this.events.some((e) => e.id === event.id)) return;
     this.events.push(event);
     if (this.events.length > 1000) {
       this.events.shift();

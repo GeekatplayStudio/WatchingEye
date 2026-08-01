@@ -15,10 +15,15 @@ schemas = { path = "../../crates/schemas" }
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 # Synchronous, dependency-light HTTP. The edge node serves one camera and a
 # couple of clients; an async runtime would be most of the binary for none
 # of the benefit.
 tiny_http = "0.12"
+# Offline cache (ROADMAP 3.2) — bundled so a Pi image needs no system libsqlite.
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+# Hub drain — sync POST only, no TLS extras beyond defaults.
+ureq = { version = "2.12", features = ["json"] }
 
 [lints]
 workspace = true
