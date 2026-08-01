@@ -3,6 +3,13 @@
 //! Every vision model (`YOLO` nano→11, `GroundingDINO`, Florence, Qwen-VL, …)
 //! implements [`Detector`]. ONNX Runtime / Candle backends live in separate
 //! modules; the pipeline depends only on the trait.
+//!
+//! Enable `--features ort` for the YOLO11n ONNX backend ([`onnx_yolo`]).
+
+pub mod yolo_decode;
+
+#[cfg(feature = "ort")]
+pub mod onnx_yolo;
 
 use camera::Frame;
 use schemas::Detection;

@@ -1,0 +1,13 @@
+{
+  "recordedAt": "2026-08-01T21:49:54.000Z",
+  "hardware": "NVIDIA GeForce RTX 3090 (24 GB), Windows 10.0.26200",
+  "model": "yolo11n-onnx",
+  "ep": "auto",
+  "samplesMs": [32, 41, 28, 29, 27],
+  "p50Ms": 29,
+  "p95Ms": 41,
+  "budgetMs": 100,
+  "budgetMet": true,
+  "mode": "record",
+  "notes": "Warm detect on synthetic 640x480 JPEG. CUDA EP not in this onnxruntime-node build; session used fallback providers."
+}

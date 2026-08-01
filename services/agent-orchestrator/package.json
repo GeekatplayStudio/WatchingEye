@@ -10,6 +10,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:gpu-latency": "vitest run src/classify-latency.bench.test.ts",
+    "test:detect-latency": "vitest run src/detect-latency.bench.test.ts",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {

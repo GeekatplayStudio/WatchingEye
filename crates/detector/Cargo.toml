@@ -10,6 +10,10 @@ schemas = { path = "../schemas" }
 camera = { path = "../camera" }
 thiserror.workspace = true
 chrono.workspace = true
+ort = { version = "2.0.0-rc.13", features = ["download-binaries"], optional = true }
 
 [lints]
 workspace = true
+
+[features]
+ort = ["dep:ort"]

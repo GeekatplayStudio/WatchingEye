@@ -47,10 +47,19 @@ function modelPath(): string {
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
 
+/** Resolve ORT execution providers: env override, else try CUDA → DML → CPU. */
+function executionProviders(): string[] {
+  const raw = (process.env.WATCHINGEYE_ORT_EP ?? "auto").toLowerCase();
+  if (raw === "cpu") return ["cpu"];
+  if (raw === "cuda") return ["cuda", "cpu"];
+  if (raw === "dml" || raw === "directml") return ["dml", "cpu"];
+  return ["cuda", "dml", "cpu"];
+}
+
 /** Load the ONNX session once and reuse it. */
 function session(): Promise<ort.InferenceSession> {
   sessionPromise ??= ort.InferenceSession.create(modelPath(), {
-    executionProviders: ["cpu"],
+    executionProviders: executionProviders(),
     graphOptimizationLevel: "all",
   });
   return sessionPromise;

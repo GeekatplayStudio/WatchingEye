@@ -71,11 +71,15 @@ closing them before more Phase 6 depth.
       `engine_motion_soak.rs` asserts `CountingDetector.calls == 0` over
       1000 identical blanks, and that motion does invoke once
 
-### Step 1.3 — ONNX YOLO detector (partial — ADR 0004)
+### Step 1.3 — ONNX YOLO detector ✅
 - [x] YOLO11n via `onnxruntime-node`: letterbox, decode, NMS, unit tests
 - [x] Stationary objects named on ~1.2 s cadence; missing model → clean 503
-- [ ] Rust `Detector` trait backend (blocked on MSVC; ADR 0004)
-- [ ] Latency < 100 ms (currently ~490 ms CPU)
+- [x] Rust `Detector` trait backend — `yolo_decode` + feature-gated
+      `OnnxYoloDetector` (`cargo test -p detector --features ort`); MSVC
+      `ort` builds on this machine; live engine still injects none (ADR 0004)
+- [x] Latency &lt; 100 ms — recorded p95 **41 ms** on RTX 3090
+      (`WATCHINGEYE_DETECT_LATENCY=record`; see `detect-latency-results.md`);
+      optional `WATCHINGEYE_ORT_EP=auto|cpu|cuda|dml`
 
 ### Step 1.4 — Temporal validation + tracker hardening ✅
 - [x] `tracker::association`: IoU + greedy matching; live engine uses IoU
@@ -337,7 +341,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 16. ~~**6.4 multimodal CLIP search** — enroll CLIP-512 + hybrid recall~~ ✅
 17. ~~**2.2 latency record** — RTX 3090 + qwen2.5vl:7b p95 recorded (miss)~~ ✅
 18. ~~**1.2 motion soak** — 1000-frame static → zero detector invocations~~ ✅
-19. **1.3 remaining** — Rust YOLO when unblocked / &lt;100 ms detect ← **next**
+19. ~~**1.3** — Rust YOLO (`ort` feature) + detect &lt;100 ms recorded~~ ✅
+20. **Catch-up complete for listed order** — remaining ROADMAP debt is opportunistic (event SQLite, ESP32, SigLIP, etc.)
 
 ---
 
