@@ -97,6 +97,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - run: npm test
+      - run: npm run demo -- --fixture
       - run: npx tsc --noEmit
 
   dashboard:

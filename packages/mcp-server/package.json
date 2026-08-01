@@ -3,11 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MCP server exposing WatchingEye to MCP clients (read-only): cameras, events, settings.",
-  "bin": { "watchingeye-mcp": "dist/index.js" },
+  "description": "Read-only WatchingEye MCP servers: combined baseline + Camera / Timeline / Alert (ADR 0003).",
+  "bin": {
+    "watchingeye-mcp": "dist/index.js",
+    "watchingeye-mcp-camera": "dist/camera-server.js",
+    "watchingeye-mcp-timeline": "dist/timeline-server.js",
+    "watchingeye-mcp-alert": "dist/alert-server.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
+    "start:camera": "tsx src/camera-server.ts",
+    "start:timeline": "tsx src/timeline-server.ts",
+    "start:alert": "tsx src/alert-server.ts",
+    "demo": "tsx src/client-demo.ts",
     "test": "vitest run"
   },
   "dependencies": {

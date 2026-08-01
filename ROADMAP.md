@@ -18,7 +18,7 @@ done (exceptions require an ADR).
 | Phase 0 Foundation | ✅ done |
 | Phase 1 Edge detection | ✅ **1.1–1.5 done** (identities + pipeline events in SQLite) |
 | Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (best ~3.9 s `llava`) |
-| Phase 3 Multi-cam / edge | **3.3 + 3.5** ✅; Pi CI gate ✅; ESP32 board selected (firmware pending); split MCP open |
+| Phase 3 Multi-cam / edge | **3.2–3.5** ✅ (ESP32 firmware pending hardware); MCP Camera/Timeline/Alert ✅ |
 | Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
 | Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice contracts only) |
 
@@ -36,7 +36,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 | P2 | **2.1** Rust LLM provider | Orchestrator TS only |
 | P2 | **3.2** edge offline cache | Pi CI + SQLite gate-open cache + hub sync ✅; not a live-Pi smoke |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
-| P2 | **3.4** Split MCP | One read-only baseline; not Camera/Timeline/Alert servers |
+| P2 | **3.4** Split MCP | Camera / Timeline / Alert bins + client demo ✅ (read-only; no actuation) |
 | P2 | **V.1 / V.2** Voice | Schemas/tests only; no Whisper/Piper live loop |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
@@ -203,7 +203,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 - Note: no firmware sources yet — vendor Camera Web Server is the first
       smoke test when the board lands; WatchingEye firmware follows.
 
-### Step 3.2 — Raspberry Pi edge mode (partial)
+### Step 3.2 — Raspberry Pi edge mode ✅
 - [x] `edge-node` binary wire-compatible with vision-engine
 - [x] Pi cross-compile gate in CI — `edge-node-pi` job builds
       `aarch64-unknown-linux-gnu` with `--profile edge` (see `.github/workflows/ci.yml`
@@ -223,9 +223,13 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
       synthetic gray-grid pumps into the shared `Engine` (same path RTSP
       uses after ffmpeg decode); not a live IP-camera farm claim
 
-### Step 3.4 — MCP servers (partial)
+### Step 3.4 — MCP servers ✅
 - [x] Single read-only MCP baseline (2.0)
-- [ ] Dedicated Camera / Timeline / Alert MCP servers + client demo
+- [x] Dedicated Camera / Timeline / Alert MCP servers + client demo —
+      `packages/mcp-server` bins `watchingeye-mcp-{camera,timeline,alert}`
+      (+ combined `watchingeye-mcp`); tools are gateway GETs only (ADR 0003);
+      `npm run demo -- --fixture` exercises the same paths without an MCP host;
+      Alert = unfiltered recent events + policy slice (no actuation)
 
 ### Step 3.5 — Hybrid appearance ReID + multi-camera identity ✅
 Integrated without replacing motion → IoU → TriggerGate. (Shipped ahead of
@@ -387,7 +391,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 24. ~~**Pi CI** — `edge-node` aarch64 cross-compile gate in GitHub Actions~~ ✅
 25. ~~**6.3 attr vectors** — `attr_embedding` bank text alongside appearance~~ ✅
 26. ~~**edge offline cache** — SQLite + hub sync (gate-open metadata)~~ ✅
-27. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
+27. ~~**3.4 Split MCP** — Camera / Timeline / Alert + client demo~~ ✅
+28. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
+29. **2.1 Rust LLM provider** / **V.1 Whisper** — next software cliffs after hardware wait
 
 ---
 
