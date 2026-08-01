@@ -42,7 +42,7 @@ mod tests {
     }
 
     impl Detector for CountingDetector {
-        fn model_id(&self) -> &str {
+        fn model_id(&self) -> &'static str {
             "counting-stub"
         }
 

@@ -32,6 +32,7 @@ use tracing::{info, warn};
 const CAPTURE_FPS: u32 = 8;
 
 /// Environment variable for the Windows `DirectShow` device name.
+#[cfg(windows)]
 pub const USB_DEVICE_ENV: &str = "WATCHINGEYE_USB_DEVICE";
 
 /// Resolve the ffmpeg device string when `--input` was omitted.

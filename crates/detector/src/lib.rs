@@ -34,7 +34,7 @@ pub enum DetectorError {
 /// The one interface all detection backends implement.
 pub trait Detector: Send {
     /// Stable model identifier, e.g. `"yolo11-nano"`.
-    fn model_id(&self) -> &str;
+    fn model_id(&self) -> &'static str;
 
     /// Run detection on one frame.
     ///

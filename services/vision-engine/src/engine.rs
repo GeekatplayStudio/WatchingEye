@@ -304,6 +304,7 @@ impl Engine {
 
     /// Like [`process`], optionally invoking `detector` **only when motion
     /// is true** (ROADMAP 1.2). Static scenes never call `detect`.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn process_with_detector(
         &mut self,
         req: FrameRequest,
@@ -312,6 +313,7 @@ impl Engine {
         self.process_with_optional_detector(req, Some(detector))
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process_with_optional_detector(
         &mut self,
         req: FrameRequest,

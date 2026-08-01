@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS cameras (
 /// Persistence / IO failures for the camera store.
 #[derive(Debug, thiserror::Error)]
 pub enum CameraStoreError {
-    /// Underlying SQLite error.
+    /// Underlying `SQLite` error.
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
     /// Directory or file IO failed.
@@ -49,7 +49,7 @@ pub struct CameraRecord {
     pub updated_at: DateTime<Utc>,
 }
 
-/// SQLite-backed camera config store.
+/// `SQLite`-backed camera config store.
 pub struct CameraStore {
     conn: Mutex<Connection>,
 }
@@ -65,7 +65,7 @@ impl CameraStore {
     /// Open (creating parent dirs) and migrate.
     ///
     /// # Errors
-    /// IO or SQLite failures.
+    /// IO or `SQLite` failures.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, CameraStoreError> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
@@ -79,7 +79,7 @@ impl CameraStore {
     /// Private in-memory DB for tests.
     ///
     /// # Errors
-    /// SQLite allocation failure.
+    /// `SQLite` allocation failure.
     pub fn open_in_memory() -> Result<Self, CameraStoreError> {
         Self::from_connection(Connection::open_in_memory()?)
     }
@@ -112,7 +112,7 @@ impl CameraStore {
     /// Insert or replace a camera row.
     ///
     /// # Errors
-    /// SQLite write failure.
+    /// `SQLite` write failure.
     pub fn upsert(&self, record: &CameraRecord) -> Result<(), CameraStoreError> {
         let conn = self.lock();
         conn.execute(
@@ -137,7 +137,7 @@ impl CameraStore {
     /// Remove a camera (disconnect).
     ///
     /// # Errors
-    /// SQLite write failure.
+    /// `SQLite` write failure.
     pub fn remove(&self, camera_id: &str) -> Result<(), CameraStoreError> {
         let conn = self.lock();
         conn.execute(
@@ -150,7 +150,7 @@ impl CameraStore {
     /// Enabled cameras for restore-on-boot, newest first.
     ///
     /// # Errors
-    /// SQLite read / corrupt row.
+    /// `SQLite` read / corrupt row.
     pub fn list_enabled(&self) -> Result<Vec<CameraRecord>, CameraStoreError> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
@@ -187,7 +187,8 @@ impl CameraStore {
     /// Look up one camera by id.
     ///
     /// # Errors
-    /// SQLite / corrupt row.
+    /// `SQLite` / corrupt row.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn get(&self, camera_id: &str) -> Result<Option<CameraRecord>, CameraStoreError> {
         let conn = self.lock();
         let row = conn

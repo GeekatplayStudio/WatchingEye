@@ -86,7 +86,7 @@ impl OnnxYoloDetector {
 }
 
 impl Detector for OnnxYoloDetector {
-    fn model_id(&self) -> &str {
+    fn model_id(&self) -> &'static str {
         MODEL_ID
     }
 

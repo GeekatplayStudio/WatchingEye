@@ -1,7 +1,7 @@
 //! ROADMAP 3.3: four simultaneous RTSP-*like* pumps into the real engine.
 //!
 //! Does not claim live IP cameras or ffmpeg. Proves the shared pipeline can
-//! keep four independent camera_ids advancing on the same gray-grid path
+//! keep four independent `camera_id`s advancing on the same gray-grid path
 //! RTSP uses after decode (`process_frame`).
 
 #![cfg(test)]
@@ -54,7 +54,9 @@ fn four_concurrent_synthetic_pumps_keep_independent_frame_counters() {
                 let _ = process_frame(&frames, req(&camera_id, blank()));
                 let mut last_frame = 0_u64;
                 for step in 0..FRAMES_EACH {
-                    let x = 10 + (step as u32 % 20) + (idx as u32) * 2;
+                    let step_u = u32::try_from(step).unwrap_or(u32::MAX);
+                    let idx_u = u32::try_from(idx).unwrap_or(0);
+                    let x = 10 + (step_u % 20) + idx_u * 2;
                     let out = process_frame(
                         &frames,
                         req(&camera_id, frame_with_squares(&[(x, 20, 8, 12)])),
