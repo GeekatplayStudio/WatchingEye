@@ -6,7 +6,7 @@
 
 use crate::config::EngineConfig;
 use crate::engine::{Engine, FrameOutcome};
-use crate::identify::{self, SharedRegistry};
+use crate::identify::{self, IdentityState};
 use axum::{
     extract::State,
     routing::{get, post},
@@ -50,10 +50,10 @@ struct Health {
 /// Build the router.
 ///
 /// Frame processing and identity are separate sub-routers because they hold
-/// different state: per-camera pipeline state versus the identity registry.
-/// `gateway_url` is where network cameras POST classify requests on a
-/// trigger — see [`crate::rtsp`].
-pub fn router(engine: SharedEngine, registry: SharedRegistry, gateway_url: String) -> Router {
+/// different state: per-camera pipeline state versus the identity registry
+/// (and its durable store). `gateway_url` is where network cameras POST
+/// classify requests on a trigger — see [`crate::rtsp`].
+pub fn router(engine: SharedEngine, identity_state: IdentityState, gateway_url: String) -> Router {
     let rtsp = crate::rtsp::router(engine.clone(), gateway_url);
 
     let frames = Router::new()
@@ -68,7 +68,8 @@ pub fn router(engine: SharedEngine, registry: SharedRegistry, gateway_url: Strin
         .route("/api/identities", get(identify::list_identities))
         .route("/api/identities/name", post(identify::name_identity))
         .route("/api/identities/{id}", get(identify::get_identity))
-        .with_state(registry);
+        .route("/api/identities/{id}/timeline", get(identify::get_timeline))
+        .with_state(identity_state);
 
     frames
         .merge(identities)

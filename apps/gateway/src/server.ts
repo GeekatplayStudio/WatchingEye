@@ -18,6 +18,7 @@ import type { DetectionEvent, ObjectClass } from "./events.js";
 import { classify, type ClassifyResult } from "./classify.js";
 import { applyPatch, AVAILABLE_CLASSES, DEFAULT_SETTINGS, SettingsError, type Settings } from "./settings.js";
 import { globalDatasetStore, type DatasetRecord } from "./dataset.js";
+import { applyActiveIntent } from "./intent-apply.js";
 
 /** Options for building the server. */
 export interface ServerOptions {
@@ -265,8 +266,25 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     if (!settings.trackedClasses.includes(event.class)) {
       event.filtered = true;
     }
-    if (result.descriptors !== undefined && result.descriptors.length > 0) {
-      event.descriptors = result.descriptors;
+    const intent = settings.activeIntent;
+    if (
+      intent !== null &&
+      intent.targetClasses.length > 0 &&
+      !intent.targetClasses.includes(event.class)
+    ) {
+      event.filtered = true;
+    }
+
+    const applied = applyActiveIntent({
+      objectClass: event.class,
+      descriptors: result.descriptors ?? [],
+      evidence: event.evidence,
+      rawAnalysis: result.rawAnalysis,
+      intent,
+    });
+    event.evidence = applied.evidence;
+    if (applied.descriptors.length > 0) {
+      event.descriptors = applied.descriptors;
     }
     const id = result.identity;
     if (id !== null && id !== undefined && id.identity_id !== "") {
@@ -290,24 +308,30 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
 
     await broadcast(event);
 
-    const plateClaim = event.evidence.find((e) => e.label.startsWith("plate:"))?.label.replace("plate:", "");
-    const breedClaim = event.evidence.find((e) => e.label.startsWith("breed:"))?.label.replace("breed:", "");
-    const record: DatasetRecord = {
-      id: `ds-${event.id}`,
-      objectId: event.objectId,
-      class: event.class,
-      cameraId: event.cameraId,
-      timestamp: event.timestamp,
-      confidence: event.confidence,
-      evidence: event.evidence,
-      snapshotRef: body.event.snapshotRef ?? `snap-${event.id}`,
-    };
-    if (event.descriptors !== undefined) record.descriptors = event.descriptors;
-    if (plateClaim !== undefined) record.licensePlate = plateClaim;
-    if (breedClaim !== undefined) record.breedOrModel = breedClaim;
-    await globalDatasetStore.insertRecord(record);
+    if (applied.shouldEnroll) {
+      const record: DatasetRecord = {
+        id: `ds-${event.id}`,
+        objectId: event.objectId,
+        class: event.class,
+        cameraId: event.cameraId,
+        timestamp: event.timestamp,
+        confidence: event.confidence,
+        evidence: event.evidence,
+        snapshotRef: body.event.snapshotRef ?? `snap-${event.id}`,
+      };
+      if (event.descriptors !== undefined) record.descriptors = event.descriptors;
+      if (applied.licensePlate !== undefined) record.licensePlate = applied.licensePlate;
+      if (applied.breedOrModel !== undefined) record.breedOrModel = applied.breedOrModel;
+      await globalDatasetStore.insertRecord(record);
+    }
 
-    return { outcome: result.outcome, event, latencyMs: result.latencyMs };
+    return {
+      outcome: result.outcome,
+      event,
+      latencyMs: result.latencyMs,
+      enrolled: applied.shouldEnroll,
+      ocrUnconfirmed: applied.ocrUnconfirmed,
+    };
   });
 
   app.get("/ws", { websocket: true }, (socket) => {

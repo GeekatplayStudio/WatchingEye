@@ -4,6 +4,7 @@
 //! matching itself happens here in deterministic Rust so "is this the same
 //! dog" can be replayed and audited. The model never gets a vote.
 
+use crate::identity_store::IdentityStore;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -14,10 +15,40 @@ use identity::descriptor::Descriptor;
 use identity::{IdentificationOutcome, Identity, Registry, Sighting};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+use tracing::warn;
 use uuid::Uuid;
 
 /// Shared identity registry.
 pub type SharedRegistry = Arc<Mutex<Registry>>;
+
+/// Shared durable store, written to after every mutation to the registry.
+pub type SharedStore = Arc<IdentityStore>;
+
+/// Axum state for the identity routes: the in-memory [`Registry`] that does
+/// all matching, plus the durable [`IdentityStore`] every mutation is saved
+/// to. Cheap to clone — both fields are `Arc`s.
+#[derive(Clone)]
+pub struct IdentityState {
+    /// In-memory matching state, guarded by a mutex.
+    pub registry: SharedRegistry,
+    /// Durable backing store.
+    pub store: SharedStore,
+}
+
+/// Persist whichever identity a sighting touched.
+///
+/// A failed write is logged and otherwise swallowed: durability is best
+/// effort, and a store outage must not make the (already-decided) in-memory
+/// match fail or roll back.
+fn persist(state: &IdentityState, id: Uuid) {
+    let snapshot = lock(&state.registry).get(id).cloned();
+    let Some(identity) = snapshot else {
+        return;
+    };
+    if let Err(err) = state.store.save_identity(&identity) {
+        warn!(%err, identity_id = %id, "failed to persist identity");
+    }
+}
 
 /// Request to identify one classified sighting.
 #[derive(Debug, Deserialize)]
@@ -142,31 +173,43 @@ fn to_sighting(req: IdentifyRequest) -> Sighting {
 }
 
 /// Attribute a sighting to a known identity, or record a new one.
+///
+/// The touched identity is persisted to the durable store before the
+/// response is returned, so a restart immediately after this call resumes
+/// with the sighting already applied.
 pub async fn identify(
-    State(registry): State<SharedRegistry>,
+    State(state): State<IdentityState>,
     Json(req): Json<IdentifyRequest>,
 ) -> Json<IdentificationOutcome> {
     let sighting = to_sighting(req);
-    Json(lock(&registry).observe(&sighting))
+    let outcome = lock(&state.registry).observe(&sighting);
+    persist(&state, outcome.identity_id);
+    Json(outcome)
 }
 
 /// Attribute many sightings in one global pass, so two detections in the
 /// same batch can never be assigned to the same identity.
 ///
 /// See [`identity::Registry::observe_batch`] for the Hungarian assignment
-/// this delegates to.
+/// this delegates to. Every identity touched by the batch is persisted.
 pub async fn identify_batch(
-    State(registry): State<SharedRegistry>,
+    State(state): State<IdentityState>,
     Json(req): Json<IdentifyBatchRequest>,
 ) -> Json<IdentifyBatchResponse> {
     let sightings: Vec<Sighting> = req.sightings.into_iter().map(to_sighting).collect();
-    let outcomes = lock(&registry).observe_batch(&sightings);
+    let outcomes = lock(&state.registry).observe_batch(&sightings);
+    let mut persisted: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    for outcome in &outcomes {
+        if persisted.insert(outcome.identity_id) {
+            persist(&state, outcome.identity_id);
+        }
+    }
     Json(IdentifyBatchResponse { outcomes })
 }
 
 /// List everything the registry remembers.
-pub async fn list_identities(State(registry): State<SharedRegistry>) -> Json<IdentityListing> {
-    let guard = lock(&registry);
+pub async fn list_identities(State(state): State<IdentityState>) -> Json<IdentityListing> {
+    let guard = lock(&state.registry);
     Json(IdentityListing {
         identities: guard
             .all()
@@ -182,11 +225,8 @@ pub async fn list_identities(State(registry): State<SharedRegistry>) -> Json<Ide
 /// Returns `404` with a JSON error body when the id is unknown, rather than
 /// an empty success, so callers can distinguish "no such identity" from
 /// "identity with no history".
-pub async fn get_identity(
-    State(registry): State<SharedRegistry>,
-    Path(id): Path<Uuid>,
-) -> Response {
-    let guard = lock(&registry);
+pub async fn get_identity(State(state): State<IdentityState>, Path(id): Path<Uuid>) -> Response {
+    let guard = lock(&state.registry);
     match guard.get(id) {
         Some(identity) => Json(IdentitySummary::from(identity.clone())).into_response(),
         None => (
@@ -197,260 +237,40 @@ pub async fn get_identity(
     }
 }
 
+/// Read one identity's chronological history straight from the durable
+/// store (see [`IdentityStore::timeline`]), independent of whatever the
+/// in-memory registry currently holds.
+///
+/// Returns an empty list — never an error response — for an unknown id or a
+/// read failure, since "no history" and "unknown id" both mean there is
+/// nothing to show a caller.
+pub async fn get_timeline(
+    State(state): State<IdentityState>,
+    Path(id): Path<Uuid>,
+) -> Json<Vec<identity::MemoryEntry>> {
+    match state.store.timeline(id) {
+        Ok(entries) => Json(entries),
+        Err(err) => {
+            warn!(%err, identity_id = %id, "failed to read persisted timeline");
+            Json(Vec::new())
+        }
+    }
+}
+
 /// Give a name to an auto-discovered identity.
 pub async fn name_identity(
-    State(registry): State<SharedRegistry>,
+    State(state): State<IdentityState>,
     Json(req): Json<NameRequest>,
 ) -> Json<serde_json::Value> {
-    let renamed = lock(&registry).name_identity(req.identity_id, &req.name);
+    let renamed = lock(&state.registry).name_identity(req.identity_id, &req.name);
+    if renamed {
+        persist(&state, req.identity_id);
+    }
     Json(serde_json::json!({ "ok": renamed }))
 }
 
+// HTTP handler tests live in `identify_tests.rs` to keep this file within
+// the workspace's per-file line budget now that persistence is wired in.
 #[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
-    use super::*;
-
-    fn registry() -> SharedRegistry {
-        Arc::new(Mutex::new(Registry::new()))
-    }
-
-    fn request(class: &str, pairs: &[(&str, &str)]) -> IdentifyRequest {
-        IdentifyRequest {
-            class: class.into(),
-            descriptors: pairs
-                .iter()
-                .map(|(k, v)| DescriptorDto {
-                    key: (*k).into(),
-                    value: (*v).into(),
-                })
-                .collect(),
-            camera_id: "webcam".into(),
-            appearance: None,
-        }
-    }
-
-    fn request_with_appearance(
-        class: &str,
-        pairs: &[(&str, &str)],
-        appearance: AppearanceDto,
-    ) -> IdentifyRequest {
-        IdentifyRequest {
-            class: class.into(),
-            descriptors: pairs
-                .iter()
-                .map(|(k, v)| DescriptorDto {
-                    key: (*k).into(),
-                    value: (*v).into(),
-                })
-                .collect(),
-            camera_id: "webcam".into(),
-            appearance: Some(appearance),
-        }
-    }
-
-    #[tokio::test]
-    async fn first_sighting_creates_an_identity() {
-        let r = registry();
-        let Json(out) = identify(State(r), Json(request("dog", &[("fur_color", "brown")]))).await;
-        assert!(out.is_new);
-    }
-
-    #[tokio::test]
-    async fn the_same_object_is_recognised_on_return() {
-        let r = registry();
-        let Json(first) = identify(
-            State(Arc::clone(&r)),
-            Json(request("car", &[("license_plate", "123ABC")])),
-        )
-        .await;
-        let Json(second) = identify(
-            State(Arc::clone(&r)),
-            Json(request("car", &[("license_plate", "123ABC")])),
-        )
-        .await;
-        assert_eq!(first.identity_id, second.identity_id);
-        assert_eq!(second.sightings, 2);
-    }
-
-    #[tokio::test]
-    async fn naming_then_listing_shows_the_name() {
-        let r = registry();
-        let Json(out) = identify(
-            State(Arc::clone(&r)),
-            Json(request("dog", &[("breed", "shiba")])),
-        )
-        .await;
-        let Json(res) = name_identity(
-            State(Arc::clone(&r)),
-            Json(NameRequest {
-                identity_id: out.identity_id,
-                name: "Mochi".into(),
-            }),
-        )
-        .await;
-        assert_eq!(res["ok"], true);
-
-        let Json(listing) = list_identities(State(r)).await;
-        assert_eq!(
-            listing.identities[0].identity.name.as_deref(),
-            Some("Mochi")
-        );
-    }
-
-    #[tokio::test]
-    async fn same_appearance_embedding_without_descriptors_matches() {
-        let r = registry();
-        let embed = AppearanceDto {
-            model: "clip".into(),
-            values: vec![1.0, 0.0, 0.0],
-        };
-        let Json(first) = identify(
-            State(Arc::clone(&r)),
-            Json(request_with_appearance("person", &[], embed.clone())),
-        )
-        .await;
-        let Json(second) = identify(
-            State(r),
-            Json(request_with_appearance("person", &[], embed)),
-        )
-        .await;
-        assert_eq!(first.identity_id, second.identity_id);
-        assert_eq!(second.sightings, 2);
-    }
-
-    #[tokio::test]
-    async fn batch_assigns_two_sightings_to_two_distinct_identities() {
-        let r = registry();
-        // Enroll by observing two distinguishable individuals first.
-        let Json(first) = identify(
-            State(Arc::clone(&r)),
-            Json(request("dog", &[("breed", "shiba")])),
-        )
-        .await;
-        let Json(second) = identify(
-            State(Arc::clone(&r)),
-            Json(request("dog", &[("breed", "labrador")])),
-        )
-        .await;
-
-        let Json(batch) = identify_batch(
-            State(Arc::clone(&r)),
-            Json(IdentifyBatchRequest {
-                sightings: vec![
-                    request("dog", &[("breed", "labrador")]),
-                    request("dog", &[("breed", "shiba")]),
-                ],
-            }),
-        )
-        .await;
-
-        assert_eq!(batch.outcomes.len(), 2);
-        assert_eq!(batch.outcomes[0].identity_id, second.identity_id);
-        assert_eq!(batch.outcomes[1].identity_id, first.identity_id);
-        assert_ne!(
-            batch.outcomes[0].identity_id, batch.outcomes[1].identity_id,
-            "two sightings in one batch must not collide on one identity"
-        );
-    }
-
-    #[tokio::test]
-    async fn batch_with_no_sightings_returns_no_outcomes() {
-        let Json(batch) = identify_batch(
-            State(registry()),
-            Json(IdentifyBatchRequest { sightings: vec![] }),
-        )
-        .await;
-        assert!(batch.outcomes.is_empty());
-    }
-
-    #[tokio::test]
-    async fn batch_of_one_creates_a_new_identity_like_the_single_endpoint() {
-        let Json(batch) = identify_batch(
-            State(registry()),
-            Json(IdentifyBatchRequest {
-                sightings: vec![request("cat", &[("fur_color", "black")])],
-            }),
-        )
-        .await;
-        assert_eq!(batch.outcomes.len(), 1);
-        assert!(batch.outcomes[0].is_new);
-    }
-
-    fn request_on_camera(class: &str, pairs: &[(&str, &str)], camera_id: &str) -> IdentifyRequest {
-        IdentifyRequest {
-            class: class.into(),
-            descriptors: pairs
-                .iter()
-                .map(|(k, v)| DescriptorDto {
-                    key: (*k).into(),
-                    value: (*v).into(),
-                })
-                .collect(),
-            camera_id: camera_id.into(),
-            appearance: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn get_identity_returns_404_for_an_unknown_id() {
-        let res = get_identity(State(registry()), Path(Uuid::new_v4())).await;
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn get_identity_returns_the_full_timeline_for_a_known_id() {
-        let r = registry();
-        let Json(out) = identify(
-            State(Arc::clone(&r)),
-            Json(request("dog", &[("breed", "shiba")])),
-        )
-        .await;
-        let res = get_identity(State(r), Path(out.identity_id)).await;
-        assert_eq!(res.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn a_sighting_on_two_cameras_stays_one_identity_and_is_flagged_multi_camera() {
-        let r = registry();
-        let Json(first) = identify(
-            State(Arc::clone(&r)),
-            Json(request_on_camera(
-                "car",
-                &[("license_plate", "123ABC")],
-                "front",
-            )),
-        )
-        .await;
-        assert!(!first.crossed_camera);
-        assert_eq!(first.cameras_seen, vec!["front".to_string()]);
-
-        let Json(second) = identify(
-            State(Arc::clone(&r)),
-            Json(request_on_camera(
-                "car",
-                &[("license_plate", "123ABC")],
-                "backyard",
-            )),
-        )
-        .await;
-        assert_eq!(second.identity_id, first.identity_id);
-        assert!(second.crossed_camera);
-        assert_eq!(
-            second.cameras_seen,
-            vec!["backyard".to_string(), "front".to_string()]
-        );
-
-        let Json(listing) = list_identities(State(Arc::clone(&r))).await;
-        let summary = listing
-            .identities
-            .iter()
-            .find(|s| s.identity.id == first.identity_id)
-            .expect("identity must be listed");
-        assert!(summary.multi_camera);
-        assert_eq!(
-            summary.cameras_seen,
-            vec!["backyard".to_string(), "front".to_string()]
-        );
-    }
-}
+#[path = "identify_tests.rs"]
+mod tests;

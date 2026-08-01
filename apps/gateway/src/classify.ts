@@ -54,6 +54,8 @@ export interface ClassifyResult {
   identity?: IdentityOutcome | null;
   /** Identifying attributes the model reported. */
   descriptors?: Array<{ key: string; value: string }>;
+  /** Raw VLM text (for deterministic ANPR / debugging). */
+  rawAnalysis?: string;
   rejectionReason?: string;
   latencyMs?: number;
 }

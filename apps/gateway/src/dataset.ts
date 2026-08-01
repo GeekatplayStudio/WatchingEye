@@ -49,6 +49,11 @@ export class DatasetStore {
   public async getAll(limit = 50): Promise<DatasetRecord[]> {
     return this.records.slice(0, limit);
   }
+
+  /** Test helper — empty the in-memory store between cases. */
+  public clear(): void {
+    this.records = [];
+  }
 }
 
 export const globalDatasetStore = new DatasetStore();

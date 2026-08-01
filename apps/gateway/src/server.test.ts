@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildServer } from "./server.js";
 import { applyPatch, DEFAULT_SETTINGS, SettingsError } from "./settings.js";
 import type { ClassifyResult } from "./classify.js";
+import { globalDatasetStore } from "./dataset.js";
 
 const GATED_EVENT = {
   objectId: "8f2a1c34-1111-4222-8333-444455556666",
@@ -217,6 +218,88 @@ describe("class filtering", () => {
     const recent = await app.inject({ method: "GET", url: "/api/events/recent" });
     expect(recent.json().events).toHaveLength(1);
     expect(recent.json().events[0].filtered).toBe(true);
+    await app.close();
+  });
+});
+
+describe("activeIntent pipeline gating", () => {
+  it("enrolls into the dataset by default", async () => {
+    globalDatasetStore.clear();
+    const app = await buildServer({ classifier: async () => decisionResult("person") });
+    await app.inject({
+      method: "POST",
+      url: "/api/classify",
+      payload: { event: GATED_EVENT, image: "" },
+    });
+    const search = await app.inject({ method: "GET", url: "/api/dataset/search?q=person" });
+    expect(search.json().records.length).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it("skips dataset enroll when activeIntent monitors without enroll", async () => {
+    globalDatasetStore.clear();
+    const app = await buildServer({ classifier: async () => decisionResult("dog") });
+    await app.inject({
+      method: "PUT",
+      url: "/api/settings",
+      payload: {
+        activeIntent: {
+          rawPrompt: "track dogs",
+          targetClasses: ["dog"],
+          attributes: ["breed"],
+          actionPolicy: "monitor",
+          datasetEnroll: false,
+          anprEnabled: false,
+          appliedAt: new Date().toISOString(),
+        },
+      },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/classify",
+      payload: { event: GATED_EVENT, image: "" },
+    });
+    expect(res.json().enrolled).toBe(false);
+    const search = await app.inject({ method: "GET", url: "/api/dataset/search?q=dog" });
+    expect(search.json().records).toEqual([]);
+    await app.close();
+  });
+
+  it("runs ANPR and enrolls when anprEnabled is set", async () => {
+    globalDatasetStore.clear();
+    const app = await buildServer({
+      classifier: async () => ({
+        ...decisionResult("car"),
+        rawAnalysis: "vehicle showing plate XYZ-9876",
+        descriptors: [{ key: "color", value: "black" }],
+      }),
+    });
+    await app.inject({
+      method: "PUT",
+      url: "/api/settings",
+      payload: {
+        activeIntent: {
+          rawPrompt: "track cars and plates",
+          targetClasses: ["car"],
+          attributes: ["license_plate", "color"],
+          actionPolicy: "anpr_ocr",
+          datasetEnroll: false,
+          anprEnabled: true,
+          appliedAt: new Date().toISOString(),
+        },
+      },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/classify",
+      payload: { event: GATED_EVENT, image: "" },
+    });
+    expect(res.json().enrolled).toBe(true);
+    expect(
+      res.json().event.evidence.some((e: { label: string }) => e.label === "plate:XYZ-9876"),
+    ).toBe(true);
+    const search = await app.inject({ method: "GET", url: "/api/dataset/search?q=XYZ-9876" });
+    expect(search.json().records[0].licensePlate).toBe("XYZ-9876");
     await app.close();
   });
 });

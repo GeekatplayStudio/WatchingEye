@@ -14,6 +14,7 @@ mod cameras_api;
 mod config;
 mod engine;
 mod identify;
+mod identity_store;
 mod netscan;
 mod onvif_client;
 mod pinned;
@@ -22,9 +23,45 @@ mod reolink_client;
 mod rtsp;
 mod scan_jobs;
 
-use std::path::PathBuf;
+use identify::IdentityState;
+use identity_store::IdentityStore;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::{error, info, warn};
+
+/// Open the durable identity store at `db_path` and seed a fresh
+/// [`identity::Registry`] from it, so a restart resumes with prior
+/// identities intact.
+///
+/// Falls back to an in-memory (non-persistent) store if the on-disk
+/// database cannot be opened — a stuck or missing database must not stop
+/// the engine from starting — and to an empty registry if the store cannot
+/// be read, logging both cases rather than failing.
+fn load_identity_state(db_path: &Path) -> Result<IdentityState, identity_store::StoreError> {
+    let store = IdentityStore::open(db_path).or_else(|err| {
+        warn!(
+            %err,
+            path = ?db_path,
+            "failed to open identity database; falling back to in-memory store (identities will not persist)"
+        );
+        IdentityStore::open_in_memory()
+    })?;
+
+    let mut registry = identity::Registry::new();
+    match store.load_all() {
+        Ok(identities) => {
+            let count = identities.len();
+            registry.import(identities);
+            info!(count, path = ?db_path, "loaded identities from durable store");
+        }
+        Err(err) => warn!(%err, "failed to load identities from store; starting empty"),
+    }
+
+    Ok(IdentityState {
+        registry: Arc::new(Mutex::new(registry)),
+        store: Arc::new(store),
+    })
+}
 
 #[tokio::main]
 async fn main() {
@@ -69,10 +106,19 @@ async fn main() {
     }
 
     let state = Arc::new(Mutex::new(engine::Engine::new()));
-    let registry = Arc::new(Mutex::new(identity::Registry::new()));
+
+    let identity_db_path = identity_store::IdentityStore::default_path();
+    let identity_state = match load_identity_state(&identity_db_path) {
+        Ok(state) => state,
+        Err(err) => {
+            error!(%err, "failed to open identity store, even in-memory; exiting");
+            std::process::exit(1);
+        }
+    };
+
     let gateway_url =
         std::env::var("GATEWAY_URL").unwrap_or_else(|_| "http://localhost:8080".to_owned());
-    let app = api::router(state, registry, gateway_url);
+    let app = api::router(state, identity_state, gateway_url);
 
     info!(port = bound.port, "vision-engine listening");
     if let Err(err) = axum::serve(bound.listener, app).await {

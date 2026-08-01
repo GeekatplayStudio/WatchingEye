@@ -243,6 +243,32 @@ impl Registry {
         id
     }
 
+    /// Seed the registry from previously persisted identities, e.g. after
+    /// loading a durable store on startup.
+    ///
+    /// Entries are inserted by [`Identity::id`](struct.Identity.html#structfield.id);
+    /// an identity already present under the same id is overwritten. Matching
+    /// itself is unaffected by import order since [`observe`](Self::observe)
+    /// only ever compares by class.
+    ///
+    /// # Example
+    /// ```
+    /// use identity::Registry;
+    ///
+    /// let mut registry = Registry::new();
+    /// let id = registry.enroll("Mochi", "dog", vec![]);
+    /// let saved: Vec<_> = registry.all().into_iter().cloned().collect();
+    ///
+    /// let mut reloaded = Registry::new();
+    /// reloaded.import(saved);
+    /// assert_eq!(reloaded.get(id).and_then(|i| i.name.clone()), Some("Mochi".to_string()));
+    /// ```
+    pub fn import(&mut self, identities: impl IntoIterator<Item = Identity>) {
+        for identity in identities {
+            self.identities.insert(identity.id, identity);
+        }
+    }
+
     /// All known identities, ordered by most recently seen.
     #[must_use]
     pub fn all(&self) -> Vec<&Identity> {

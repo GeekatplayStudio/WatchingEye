@@ -16,12 +16,12 @@ closing them before more Phase 6 depth.
 
 | Priority | Step | Gap |
 |----------|------|-----|
-| P0 | **1.5** SQLite object DB | No sqlite/sqlx anywhere; identity + events are memory/Postgres JSONB only |
+| P0 | **1.5** SQLite object DB | ~~No sqlite/sqlx anywhere~~ ✅ identity persistence shipped; events remain memory/Postgres JSONB only |
 | P0 | **1.1** File & USB camera backends | No Rust file/USB `CameraSource`; live path is browser webcam / RTSP |
 | P1 | **1.4** Tracker soak + snapshot fixtures | IoU works; no 100-frame soak / fixture-video snapshot tests in CI |
 | P1 | **2.3** Rules → notify webhook | Rule types exist; no HTTP webhook delivery |
 | P1 | **2.4** Event replay UI | Live evidence yes; no past-event pipeline replay |
-| P1 | **6.1** NL intent → pipeline | Settings/UI work; `datasetEnroll` / `anprEnabled` do **not** gate classify/ANPR yet |
+| P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
 | P2 | **2.1c / 6.3** pgvector | Docker image present; extension + vector columns unused |
 | P2 | **3.4** Split MCP servers | One read-only MCP baseline; not Camera/Timeline/Alert |
@@ -70,10 +70,20 @@ closing them before more Phase 6 depth.
 - [ ] Snapshot tests of full event streams for 3 fixture videos
 - [ ] Formal soak: two people keep distinct UUIDs across 100 frames
 
-### Step 1.5 — SQLite object database ⛔ skipped
-- [ ] Engine restart resumes with prior object history intact
-- [ ] Timeline query: all events for object UUID in < 10 ms
-- [ ] Migration test: v0 → current on a seeded database
+### Step 1.5 — SQLite object database (partial)
+- [x] Engine restart resumes with prior identities intact — `rusqlite`
+      (`bundled`) store in `vision-engine`, seeded into `identity::Registry`
+      on startup (`identify.rs`, `identity_store.rs`); matching itself stays
+      in `crates/identity` (`Registry::import`), the store is a thin,
+      identity-crate-agnostic persistence layer
+- [x] Timeline query: all events for object UUID in < 10 ms — `GET
+      /api/identities/{id}/timeline` reads `memory_json` by primary key;
+      covered by a timing-asserting unit test
+- [x] Migration test: v0 → current on a seeded database — `PRAGMA
+      user_version` gates schema creation, exercised by
+      `migrating_from_v0_creates_the_v1_schema_and_is_idempotent`
+- Note: this covers **identity** history only, not generic pipeline events
+  (still memory/Postgres JSONB) — see the debt table above.
 
 ---
 
@@ -201,20 +211,18 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
 
 Builds on Step 3.5. See ADR 0005 (partially implemented).
 
-### Step 6.1 — Natural language intent & target registration (partial)
-UI/settings path works; **pipeline gating does not**.
-
+### Step 6.1 — Natural language intent & target registration ✅
 - [x] `nl-parser.ts` + `/parse-intent` + gateway `/api/nlp/target`
-- [x] Parse `"track all dogs"` → `dog` + `dataset_enroll` flags (parser)
-- [x] Parse `"track cars and capture plates"` → `car` + `anpr_ocr` (parser)
+- [x] Parse `"track all dogs"` → `dog` + `dataset_enroll` flags
+- [x] Parse `"track cars and capture plates"` → `car` + `anpr_ocr`
 - [x] Settings `activeIntent` + WebSocket broadcast; panel refreshes live
-- [ ] `datasetEnroll` / `anprEnabled` / attributes actually change classify,
-      ANPR, and dataset write behavior (today: stored + displayed only)
+- [x] `datasetEnroll` / `anprEnabled` / attributes applied on classify
+      (`intent-apply.ts`: enroll gate, regex ANPR, descriptor filter, `ocr_unconfirmed`)
 
 ### Step 6.2 — Deeper recognition (ANPR & fine-grained) (partial)
-- [x] Regex ANPR helper + unit tests (`anpr.ts`) — **not wired** into classify
-- [ ] Call ANPR (or VLM plate path) from live classify; surface `ocr_unconfirmed`
-- [ ] Real OCR ANPR; breed/color extractor with confidence
+- [x] Regex ANPR on live classify when `anprEnabled` (gateway `anpr.ts`)
+- [ ] Real OCR ANPR; breed/color extractor with confidence beyond VLM text
+- [ ] Dedicated OCR model path (Paddle/Fast-LPR) when regex misses
 
 ### Step 6.3 — Multimodal vector dataset auto-builder ⛔ not started
 - [ ] Persist gated events + DINOv2/CLIP vectors into pgvector with provenance
@@ -231,11 +239,11 @@ UI/settings path works; **pipeline gating does not**.
 
 ## Recommended catch-up order
 
-1. **6.1 remaining** — wire `activeIntent` into classify / dataset / ANPR path  
-2. **1.5** — SQLite (or durable) object + identity persistence  
-3. **1.1** — file camera backend + golden fixture test  
-4. **2.3** — notify webhook from rules  
-5. **1.4 / 2.2** — soak + golden VLM CI gates  
+1. ~~**6.1 remaining** — wire `activeIntent` into classify / dataset / ANPR~~ ✅
+2. ~~**1.5** — SQLite identity persistence~~ ✅ (event persistence still open)
+3. **1.1** — file camera backend + golden fixture test ← **next**
+4. **2.3** — notify webhook from rules
+5. **1.4 / 2.2** — soak + golden VLM CI gates
 6. Then resume Phase 6.2–6.3 depth
 
 ---

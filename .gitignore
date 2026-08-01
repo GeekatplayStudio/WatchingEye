@@ -10,6 +10,11 @@ models/
 .next/
 .runtime/
 
+# Default vision-engine identity database (see identity_store.rs)
+/data/
+*.sqlite
+*.sqlite3
+
 # TypeScript incremental build cache
 *.tsbuildinfo
 
