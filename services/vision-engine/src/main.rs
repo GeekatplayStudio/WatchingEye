@@ -10,31 +10,31 @@
 
 mod api;
 mod bind;
-mod cameras_api;
 mod camera_store;
+mod cameras_api;
 mod cli;
 mod config;
 mod engine;
 #[cfg(test)]
-mod engine_soak;
-#[cfg(test)]
 mod engine_motion_soak;
 #[cfg(test)]
-mod rtsp_scale;
+mod engine_soak;
 mod file_pump;
 #[cfg(test)]
 mod fixture_streams;
 mod identify;
 mod identity_store;
+mod motion_detector_gate;
 mod netscan;
 mod notify;
 mod onvif_client;
 mod pinned;
 mod pipeline;
-mod motion_detector_gate;
 mod reolink_client;
 mod rtsp;
 mod rtsp_capture;
+#[cfg(test)]
+mod rtsp_scale;
 mod rule_set;
 mod scan_jobs;
 mod usb_pump;

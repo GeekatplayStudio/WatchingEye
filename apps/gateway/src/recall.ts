@@ -81,7 +81,10 @@ export function parseTimeWindow(query: string, now = new Date()): TimeWindow {
     kept.push(t);
   }
 
-  return { since, until, cleanedQuery: kept.join(" ").trim() };
+  const out: TimeWindow = { cleanedQuery: kept.join(" ").trim() };
+  if (since !== undefined) out.since = since;
+  if (until !== undefined) out.until = until;
+  return out;
 }
 
 /** Terms longer than 2 chars, lowercased. */

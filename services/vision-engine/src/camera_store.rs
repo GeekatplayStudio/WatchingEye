@@ -140,7 +140,10 @@ impl CameraStore {
     /// SQLite write failure.
     pub fn remove(&self, camera_id: &str) -> Result<(), CameraStoreError> {
         let conn = self.lock();
-        conn.execute("DELETE FROM cameras WHERE camera_id = ?1", params![camera_id])?;
+        conn.execute(
+            "DELETE FROM cameras WHERE camera_id = ?1",
+            params![camera_id],
+        )?;
         Ok(())
     }
 

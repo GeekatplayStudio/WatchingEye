@@ -72,10 +72,7 @@ fn motion_frame_invokes_object_detector() {
     engine.process_with_detector(req(blank()), &mut det);
     assert_eq!(det.calls, 0);
 
-    let out = engine.process_with_detector(
-        req(frame_with_squares(&[(40, 30, 16, 20)])),
-        &mut det,
-    );
+    let out = engine.process_with_detector(req(frame_with_squares(&[(40, 30, 16, 20)])), &mut det);
     assert!(out.motion, "bright square must trip motion");
     assert!(out.detector_invoked);
     assert_eq!(det.calls, 1);

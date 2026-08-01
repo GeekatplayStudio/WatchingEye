@@ -57,10 +57,7 @@ fn four_concurrent_synthetic_pumps_keep_independent_frame_counters() {
                     let x = 10 + (step as u32 % 20) + (idx as u32) * 2;
                     let out = process_frame(
                         &frames,
-                        req(
-                            &camera_id,
-                            frame_with_squares(&[(x, 20, 8, 12)]),
-                        ),
+                        req(&camera_id, frame_with_squares(&[(x, 20, 8, 12)])),
                     );
                     assert!(
                         out.frame > last_frame,

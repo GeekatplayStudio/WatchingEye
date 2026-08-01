@@ -44,7 +44,10 @@ impl OnnxYoloDetector {
      * let det = OnnxYoloDetector::from_path("models/vision/yolo11n.onnx", 0.4)?;
      * ```
      */
-    pub fn from_path(model_path: impl AsRef<Path>, min_confidence: f32) -> Result<Self, DetectorError> {
+    pub fn from_path(
+        model_path: impl AsRef<Path>,
+        min_confidence: f32,
+    ) -> Result<Self, DetectorError> {
         let path = model_path.as_ref();
         if !path.is_file() {
             return Err(DetectorError::Inference {
@@ -92,22 +95,27 @@ impl Detector for OnnxYoloDetector {
             return Err(DetectorError::UnsupportedFormat(frame.format.clone()));
         }
         let (tensor, meta) = letterbox_frame(frame)?;
-        let input = Tensor::from_array(([1_usize, 3, INPUT_SIZE, INPUT_SIZE], tensor)).map_err(
-            |e| DetectorError::Inference {
-                model: MODEL_ID.into(),
-                reason: e.to_string(),
-            },
-        )?;
-        let outputs = self.session.run(ort::inputs![input]).map_err(|e| DetectorError::Inference {
-            model: MODEL_ID.into(),
-            reason: e.to_string(),
-        })?;
-        let (_shape, data) = outputs[0]
-            .try_extract_tensor::<f32>()
-            .map_err(|e| DetectorError::Inference {
-                model: MODEL_ID.into(),
-                reason: e.to_string(),
+        let input =
+            Tensor::from_array(([1_usize, 3, INPUT_SIZE, INPUT_SIZE], tensor)).map_err(|e| {
+                DetectorError::Inference {
+                    model: MODEL_ID.into(),
+                    reason: e.to_string(),
+                }
             })?;
+        let outputs =
+            self.session
+                .run(ort::inputs![input])
+                .map_err(|e| DetectorError::Inference {
+                    model: MODEL_ID.into(),
+                    reason: e.to_string(),
+                })?;
+        let (_shape, data) =
+            outputs[0]
+                .try_extract_tensor::<f32>()
+                .map_err(|e| DetectorError::Inference {
+                    model: MODEL_ID.into(),
+                    reason: e.to_string(),
+                })?;
         let decoded = decode(data, ANCHORS, INPUT_SIZE, self.min_confidence);
         Ok(decoded
             .into_iter()

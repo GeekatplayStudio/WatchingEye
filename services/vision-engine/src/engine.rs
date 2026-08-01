@@ -384,8 +384,7 @@ impl Engine {
         ));
 
         let had_detector = detector.is_some();
-        let detector_invoked =
-            crate::motion_detector_gate::maybe_invoke(motion, detector, &frame);
+        let detector_invoked = crate::motion_detector_gate::maybe_invoke(motion, detector, &frame);
         if had_detector {
             if detector_invoked {
                 trace.push("object_detector: invoked (motion)".to_owned());

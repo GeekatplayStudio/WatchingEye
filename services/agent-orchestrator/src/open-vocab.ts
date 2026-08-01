@@ -183,7 +183,7 @@ export class ColorHistogramScorer implements OpenVocabScorer {
       return [];
     }
 
-    let best = bank[0]!;
+    let best: string = bank[0]!;
     let bestDist = Infinity;
     for (const name of bank) {
       const target = COLOR_HSV[name];

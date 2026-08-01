@@ -147,12 +147,13 @@ export function applyActiveIntent(input: IntentApplyInput): IntentApplyResult {
   const shouldEnroll =
     intent === null ? true : intent.datasetEnroll === true || intent.anprEnabled === true;
 
-  return {
+  const out: IntentApplyResult = {
     descriptors,
     evidence,
-    licensePlate,
-    breedOrModel,
     shouldEnroll,
     ocrUnconfirmed,
   };
+  if (licensePlate !== undefined) out.licensePlate = licensePlate;
+  if (breedOrModel !== undefined) out.breedOrModel = breedOrModel;
+  return out;
 }

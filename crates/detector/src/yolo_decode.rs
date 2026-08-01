@@ -221,7 +221,9 @@ pub fn decode(
         let cy = data[anchors + i];
         let w = data[2 * anchors + i];
         let h = data[3 * anchors + i];
-        if !(cx.is_finite() && cy.is_finite() && w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0
+        if !(cx.is_finite() && cy.is_finite() && w.is_finite() && h.is_finite())
+            || w <= 0.0
+            || h <= 0.0
         {
             continue;
         }

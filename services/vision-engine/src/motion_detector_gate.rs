@@ -17,11 +17,7 @@ use detector::Detector;
  * maybe_invoke(false, Some(&mut det), &frame); // never calls detect
  * ```
  */
-pub fn maybe_invoke(
-    motion: bool,
-    detector: Option<&mut dyn Detector>,
-    frame: &Frame,
-) -> bool {
+pub fn maybe_invoke(motion: bool, detector: Option<&mut dyn Detector>, frame: &Frame) -> bool {
     if !motion {
         return false;
     }

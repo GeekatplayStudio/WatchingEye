@@ -442,11 +442,12 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   app.post("/api/dataset/recall", async (req) => {
     const body = req.body as { q?: string; image?: string; limit?: number };
     const n = Math.min(Number(body.limit ?? 20) || 20, 100);
-    return runDatasetRecall({
+    const recallIn: { query: string; limit: number; image?: string } = {
       query: body.q ?? "",
       limit: n,
-      image: typeof body.image === "string" ? body.image : undefined,
-    });
+    };
+    if (typeof body.image === "string") recallIn.image = body.image;
+    return runDatasetRecall(recallIn);
   });
 
   /** Cosine nearest neighbours over enrolled appearance vectors. */
@@ -516,36 +517,38 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
       event.filtered = true;
     }
 
-    const applied = applyActiveIntent({
+    const intentIn: Parameters<typeof applyActiveIntent>[0] = {
       objectClass: event.class,
       descriptors: result.descriptors ?? [],
       evidence: event.evidence,
-      rawAnalysis: result.rawAnalysis,
-      plate: result.plate,
       intent,
-    });
+    };
+    if (result.rawAnalysis !== undefined) intentIn.rawAnalysis = result.rawAnalysis;
+    if (result.plate !== undefined) intentIn.plate = result.plate;
+    const applied = applyActiveIntent(intentIn);
     event.evidence = applied.evidence;
     if (applied.descriptors.length > 0) {
       event.descriptors = applied.descriptors;
     }
     const id = result.identity;
     if (id !== null && id !== undefined && id.identity_id !== "") {
-      event.identity = {
+      const identity: NonNullable<typeof event.identity> = {
         id: id.identity_id,
         name: id.name,
         isNew: id.is_new,
         sightings: id.sightings,
-        quality: id.quality,
-        status: id.status,
         ambiguous: id.ambiguous === true,
-        cameraId: id.camera_id,
         crossedCamera: id.crossed_camera === true,
-        camerasSeen: id.cameras_seen,
       };
+      if (id.quality !== undefined) identity.quality = id.quality;
+      if (id.status !== undefined) identity.status = id.status;
+      if (id.camera_id !== undefined) identity.cameraId = id.camera_id;
+      if (id.cameras_seen !== undefined) identity.camerasSeen = id.cameras_seen;
       if (id.evidence !== null && id.evidence !== undefined) {
-        event.identity.score = id.evidence.score;
-        event.identity.matched = id.evidence.matched;
+        identity.score = id.evidence.score;
+        identity.matched = id.evidence.matched;
       }
+      event.identity = identity;
     }
 
     await broadcast(event);
