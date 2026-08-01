@@ -34,11 +34,12 @@ apps/
 packages/
   mcp-server/            Read-only MCP server (cameras, events, settings)
 edge/
-  esp32/                 Firmware skeleton — capture/stream only; see roadmap for no_std status
+  esp32/                 ESP32 capture/stream tier (no AI) — Freenove S3 CAM lab board; firmware encode pending
 docs/
   PRD.md                 Merged product requirements document
   adr/                   Architecture Decision Records
   architecture/          Diagrams and overviews
+  hardware/              Lab device inventory (Freenove ESP32-S3 CAM, …)
 ```
 
 ## Getting Started — one click

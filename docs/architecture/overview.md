@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TD
-    C[Camera<br/>webcam / RTSP / USB] --> FB[Frame Buffer]
+    C[Camera<br/>webcam / RTSP / USB / ESP32*] --> FB[Frame Buffer]
     FB --> FV[Frame Validator]
     FV --> BG[Background Model<br/>motion crate]
     BG --> BL[Blob Extraction]
@@ -44,6 +44,10 @@ Two independent paths run over the same camera feed:
 
 The Super Agent (VLM classification) only runs when the motion path's gate
 opens — never continuously, never per frame.
+
+\*ESP32-S3 lab board: Freenove FNK0085 (16 MB) — capture/stream only, no
+on-device AI. Hub ingest firmware is not encoded yet; see
+`docs/hardware/freenove-esp32-s3-cam.md`.
 
 ## Two applications, one workspace
 
@@ -102,6 +106,8 @@ camera, motion, tracker, actuator, spatial ← services/edge-node
 ## Where things go
 
 - New camera backend → implement `camera::CameraSource`
+- ESP32 firmware → `edge/esp32` (separate toolchain; Freenove board profile
+  under `boards/`); never put models on the MCU
 - New vision model (Rust-side) → implement `detector::Detector`
 - New event type → `events::EventKind` variant + rule conditions
 - New guardrail gate → add to `guardrails::validate` / `guardrails::safety`

@@ -67,7 +67,10 @@ clippy::float_cmp)]` — production code stays strict, tests stay readable.
   YOLO detection + DINOv2 appearance embed via onnxruntime-node, zod guardrails
 - `apps/gateway` — Fastify proxy, **no AI logic allowed here**
 - `apps/dashboard` — Next.js UI (Console + Identities + Discover)
-- `edge/esp32` — firmware skeleton, separate toolchain, **no AI on device** (capture/stream only until a `no_std` port exists — see ROADMAP.md)
+- `edge/esp32` — firmware skeleton, separate toolchain, **no AI on device**
+  (capture/stream only). Lab board: **Freenove ESP32-S3 CAM (FNK0085, 16 MB)** —
+  docs in `docs/hardware/`, board profile in `edge/esp32/boards/`; encode after
+  hardware arrives (see ROADMAP 3.1)
 
 Real-code status: the pipeline is live (not stub) — background-model motion
 detection, IoU tracking, servo aim with failsafe, hybrid identity (VLM

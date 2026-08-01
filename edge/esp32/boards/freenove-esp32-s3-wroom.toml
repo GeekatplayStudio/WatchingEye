@@ -1,0 +1,52 @@
+# WatchingEye board profile — Freenove ESP32-S3 WROOM CAM (FNK0085)
+# 16 MB Flash kit used for lab testing. Firmware encode is deferred until
+# hardware arrives; this file is the pin/config source of truth for later builds.
+
+id = "freenove-esp32-s3-wroom"
+vendor = "Freenove"
+sku = "FNK0085"
+display_name = "Freenove ESP32-S3 CAM (16 MB Flash)"
+docs = "docs/hardware/freenove-esp32-s3-cam.md"
+vendor_tutorial = "https://docs.freenove.com/projects/fnk0085/en/latest/"
+vendor_samples = "https://github.com/Freenove/Freenove_ESP32_S3_WROOM_Board"
+
+[mcu]
+chip = "esp32s3"
+cores = 2
+max_mhz = 240
+flash_mb = 16
+psram_mb = 8
+psram_type = "opi"
+
+[camera]
+sensor = "OV2640"
+# Freenove Cam Pin table (S3 WROOM). Confirm against kit PDF on first bring-up.
+xclk = 15
+siod = 4
+sioc = 5
+vsync = 6
+href = 7
+pclk = 13
+y2 = 11
+y3 = 9
+y4 = 8
+y5 = 10
+y6 = 12
+y7 = 18
+y8 = 17
+y9 = 16
+
+[radio]
+wifi = true
+bluetooth_le = true
+
+[storage]
+microsd = true
+
+[watchingeye]
+# PRD: no AI on device. Hub does motion / VLM / identity.
+ai_on_device = false
+# Preferred first WatchingEye ingest once firmware exists.
+target_grid_w = 96
+target_grid_h = 72
+default_camera_id = "lab-esp32-s3"

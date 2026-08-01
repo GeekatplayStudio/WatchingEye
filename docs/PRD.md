@@ -43,7 +43,7 @@ implementation + production starter kit.
 
 | Tier | Hardware | Responsibilities |
 |------|----------|------------------|
-| Embedded | ESP32-S3 cam (no_std) | Capture, compress, encrypt, stream, heartbeat, OTA, watchdog. **No AI.** |
+| Embedded | ESP32-S3 cam (no_std) | Capture, compress, encrypt, stream, heartbeat, OTA, watchdog. **No AI.** Lab board: Freenove ESP32-S3 CAM 16 MB (`docs/hardware/`). |
 | Edge | Raspberry Pi + camera | Motion detection, quantized object detection, tracking, local cache, offline operation |
 | Server | Desktop/GPU/K8s | Multi-camera, GPU inference, agent orchestration, history, analytics, training |
 
