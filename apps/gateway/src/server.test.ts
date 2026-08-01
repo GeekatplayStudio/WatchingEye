@@ -64,6 +64,52 @@ describe("gateway server", () => {
     await app.close();
   });
 
+  it("runs text-path voice ask through recall then speak", async () => {
+    globalDatasetStore.clear();
+    await globalDatasetStore.insertRecord({
+      id: "ask-1",
+      objectId: "obj-ask-1",
+      class: "person",
+      cameraId: "driveway",
+      timestamp: new Date().toISOString(),
+      confidence: 0.99,
+      evidence: [{ label: "class:person", description: "Walker" }],
+      snapshotRef: "snap-ask-1",
+    });
+    const app = await buildServer({
+      voiceCommand: async (body) => ({
+        outcome: "command",
+        transcript: body.transcript ?? "",
+        command: { intent: "query_events", window: "today" },
+        stt: { model: "stub" },
+      }),
+      voiceSpeak: async ({ facts }) => ({
+        outcome: "spoken",
+        speechText: `Detected ${(facts as Array<{ objectClass: string }>)[0]?.objectClass ?? "nothing"}.`,
+        audioBase64: "UkZGRg==",
+        mimeType: "audio/wav",
+        tts: { model: "stub" },
+      }),
+    });
+    const empty = await app.inject({
+      method: "POST",
+      url: "/api/voice/ask",
+      payload: {},
+    });
+    expect(empty.statusCode).toBe(400);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/voice/ask",
+      payload: { transcript: "what happened today" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().outcome).toBe("answered");
+    expect(res.json().recall.citations).toContain("ask-1");
+    expect(res.json().speak.tts.model).toBe("stub");
+    globalDatasetStore.clear();
+    await app.close();
+  });
+
   it("proxies voice speak from facts and rejects free-form text", async () => {
     const app = await buildServer({
       voiceSpeak: async ({ facts }) => ({

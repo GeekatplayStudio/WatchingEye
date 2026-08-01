@@ -12,6 +12,7 @@
  * - `POST /api/edge/sync` — AI-free ingest of edge-node offline cache drains
  * - `POST /api/voice/command` — proxy STT→parse to orchestrator (no AI here)
  * - `POST /api/voice/speak` — proxy facts→TTS to orchestrator (no AI here)
+ * - `POST /api/voice/ask` — text ask: query_events → recall → speak (no AI here)
  * - `GET  /ws` — live event stream
  */
 import Fastify, { type FastifyInstance } from "fastify";
@@ -37,6 +38,7 @@ import { createDatasetStore } from "./vector-db.js";
 import { applyActiveIntent } from "./intent-apply.js";
 import { recallFromRecords } from "./recall.js";
 import { ingestEdgeSync, type EdgeSyncBody } from "./edge-sync.js";
+import { runVoiceAsk, type VoiceParseResult, type VoiceSpeakResult } from "./voice-ask.js";
 
 /** Options for building the server. */
 export interface ServerOptions {
@@ -78,7 +80,7 @@ export interface ServerOptions {
     mimeType?: string;
   }) => Promise<unknown>;
   /** Injectable voice-speak handler (orchestrator `/voice/speak` proxy). */
-  voiceSpeak?: (body: { facts: unknown }) => Promise<unknown>;
+  voiceSpeak?: (body: { facts: unknown }) => Promise<VoiceSpeakResult>;
 }
 
 /** Body of a classification request from the dashboard. */
@@ -273,7 +275,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
           signal: AbortSignal.timeout(60_000),
         },
       );
-      const json = (await res.json()) as unknown;
+      const json = (await res.json()) as VoiceSpeakResult;
       if (!res.ok) {
         const err = new Error("voice speak proxy failed") as Error & {
           status: number;
@@ -487,6 +489,36 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         return reply.status(e.status).send(e.body ?? { error: e.message });
       }
       return reply.status(502).send({ error: "voice speak unavailable", detail: e.message });
+    }
+  });
+
+  /**
+   * Text-path ask: parse query_events → dataset recall → speak facts.
+   * No live mic; free-form recall prose is never sent to TTS.
+   */
+  app.post("/api/voice/ask", async (req, reply) => {
+    const body = req.body as { transcript?: string };
+    if (typeof body?.transcript !== "string" || body.transcript.trim() === "") {
+      return reply.status(400).send({ error: "transcript is required" });
+    }
+    try {
+      const result = await runVoiceAsk({
+        transcript: body.transcript,
+        parse: async (transcript) =>
+          (await voiceCommand({ transcript })) as VoiceParseResult,
+        getRecords: () => datasetStore.getAll(500),
+        speak: async (facts) => voiceSpeak({ facts }),
+      });
+      if (result.outcome === "rejected" && result.command === null && result.transcript === "") {
+        return reply.status(400).send(result);
+      }
+      return result;
+    } catch (err) {
+      const e = err as Error & { status?: number; body?: unknown };
+      if (typeof e.status === "number") {
+        return reply.status(e.status).send(e.body ?? { error: e.message });
+      }
+      return reply.status(502).send({ error: "voice ask unavailable", detail: e.message });
     }
   });
 

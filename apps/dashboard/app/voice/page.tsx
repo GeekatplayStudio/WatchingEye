@@ -5,6 +5,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { VoiceAskPanel } from "@/components/voice-ask-panel";
 import { VoiceCommandPanel } from "@/components/voice-command-panel";
 import { VoiceSpeakPanel } from "@/components/voice-speak-panel";
 import { Mic, Volume2 } from "lucide-react";
@@ -16,8 +17,9 @@ export default function VoicePage() {
         eyebrow="WatchingEye · Voice module"
         title="Voice"
         lede="Speech in is untrusted and rule-parsed. Speech out is templated from validated facts only — never free-form model text."
-        actions={<Badge variant="success">V.1 + V.2 TTS</Badge>}
+        actions={<Badge variant="success">V.1 + V.2 ask</Badge>}
       />
+      <VoiceAskPanel />
       <VoiceCommandPanel />
       <VoiceSpeakPanel />
       <Card>
