@@ -133,7 +133,9 @@ export function preprocessImageNet(
         const top = (rgba[i00] ?? 0) * (1 - fx) + (rgba[i01] ?? 0) * fx;
         const bot = (rgba[i10] ?? 0) * (1 - fx) + (rgba[i11] ?? 0) * fx;
         const v = (top * (1 - fy) + bot * fy) / 255;
-        tensor[c * plane + y * size + x] = (v - MEAN[c]) / STD[c];
+        const mean = MEAN[c as 0 | 1 | 2] ?? 0;
+        const std = STD[c as 0 | 1 | 2] ?? 1;
+        tensor[c * plane + y * size + x] = (v - mean) / std;
       }
     }
   }
