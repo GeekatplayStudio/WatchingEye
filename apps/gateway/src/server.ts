@@ -13,6 +13,7 @@
  * - `POST /api/voice/command` — proxy STT→parse to orchestrator (no AI here)
  * - `POST /api/voice/speak` — proxy facts→TTS to orchestrator (no AI here)
  * - `POST /api/voice/ask` — text ask: query_events → recall → speak (no AI here)
+ * - `POST /api/voice/audio-event` — proxy non-speech audio classify (no AI here)
  * - `GET  /ws` — live event stream
  */
 import Fastify, { type FastifyInstance } from "fastify";
@@ -81,6 +82,11 @@ export interface ServerOptions {
   }) => Promise<unknown>;
   /** Injectable voice-speak handler (orchestrator `/voice/speak` proxy). */
   voiceSpeak?: (body: { facts: unknown }) => Promise<VoiceSpeakResult>;
+  /** Injectable audio-event handler (orchestrator `/voice/audio-event` proxy). */
+  voiceAudioEvent?: (body: {
+    audioBase64?: string;
+    mimeType?: string;
+  }) => Promise<unknown>;
 }
 
 /** Body of a classification request from the dashboard. */
@@ -287,6 +293,30 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
       }
       return json;
     });
+  const voiceAudioEvent =
+    opts.voiceAudioEvent ??
+    (async (body: { audioBase64?: string; mimeType?: string }) => {
+      const res = await fetch(
+        `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/voice/audio-event`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(60_000),
+        },
+      );
+      const json = (await res.json()) as unknown;
+      if (!res.ok) {
+        const err = new Error("voice audio-event proxy failed") as Error & {
+          status: number;
+          body: unknown;
+        };
+        err.status = res.status;
+        err.body = json;
+        throw err;
+      }
+      return json;
+    });
   let settings: Settings = { ...DEFAULT_SETTINGS };
   const sockets = new Set<{ send: (data: string) => void }>();
   /** Cameras become known when they send frames — nothing is pre-registered. */
@@ -464,6 +494,30 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         return reply.status(e.status).send(e.body ?? { error: e.message });
       }
       return reply.status(502).send({ error: "voice command unavailable", detail: e.message });
+    }
+  });
+
+  /**
+   * Audio-event proxy — relays non-speech clips to the orchestrator stub/live
+   * detector. No classification logic here (AI-free gateway).
+   */
+  app.post("/api/voice/audio-event", async (req, reply) => {
+    const body = req.body as { audioBase64?: string; mimeType?: string };
+    if (typeof body?.audioBase64 !== "string" || body.audioBase64.length === 0) {
+      return reply.status(400).send({ error: "audioBase64 is required" });
+    }
+    try {
+      const payload: { audioBase64: string; mimeType?: string } = {
+        audioBase64: body.audioBase64,
+      };
+      if (typeof body.mimeType === "string") payload.mimeType = body.mimeType;
+      return await voiceAudioEvent(payload);
+    } catch (err) {
+      const e = err as Error & { status?: number; body?: unknown };
+      if (typeof e.status === "number") {
+        return reply.status(e.status).send(e.body ?? { error: e.message });
+      }
+      return reply.status(502).send({ error: "voice audio-event unavailable", detail: e.message });
     }
   });
 

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { VoiceAskPanel } from "@/components/voice-ask-panel";
+import { VoiceAudioEventPanel } from "@/components/voice-audio-event-panel";
 import { VoiceCommandPanel } from "@/components/voice-command-panel";
 import { VoiceLiveMicPanel } from "@/components/voice-live-mic-panel";
 import { VoiceSpeakPanel } from "@/components/voice-speak-panel";
@@ -18,9 +19,10 @@ export default function VoicePage() {
         eyebrow="WatchingEye · Voice module"
         title="Voice"
         lede="Speech in is untrusted and rule-parsed. Speech out is templated from validated facts only — never free-form model text."
-        actions={<Badge variant="success">V.1 + V.2 duplex</Badge>}
+        actions={<Badge variant="success">V.1 + V.2</Badge>}
       />
       <VoiceLiveMicPanel />
+      <VoiceAudioEventPanel />
       <VoiceAskPanel />
       <VoiceCommandPanel />
       <VoiceSpeakPanel />
@@ -32,7 +34,8 @@ export default function VoicePage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           <code>WATCHINGEYE_WHISPER=stub|auto|cli</code>. Push-to-talk uses the
-          browser mic; audio-event detection (glass-break / bark) is still open.
+          browser mic. Non-speech events use the stub detector until a live
+          classifier lands.
         </CardContent>
       </Card>
       <Card>

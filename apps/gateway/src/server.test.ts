@@ -38,6 +38,36 @@ function decisionResult(objectClass: string): ClassifyResult {
 }
 
 describe("gateway server", () => {
+  it("proxies audio-event classify without interpreting clips", async () => {
+    const app = await buildServer({
+      voiceAudioEvent: async (body) => ({
+        outcome: "event",
+        event: {
+          kind: "bark",
+          confidence: 0.95,
+          provenance: { model_version: "stub", timestamp: "t" },
+        },
+        detector: { model: "stub" },
+        bytes: body.audioBase64?.length ?? 0,
+        latencyMs: 1,
+      }),
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/voice/audio-event",
+      payload: { audioBase64: Buffer.from("KIND:bark\n").toString("base64") },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().event.kind).toBe("bark");
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/voice/audio-event",
+      payload: {},
+    });
+    expect(missing.statusCode).toBe(400);
+    await app.close();
+  });
+
   it("proxies voice commands without interpreting them", async () => {
     const app = await buildServer({
       voiceCommand: async (body) => ({

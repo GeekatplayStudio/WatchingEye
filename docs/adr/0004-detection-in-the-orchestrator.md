@@ -32,6 +32,16 @@ The same placement applies to **DINOv2 appearance embeddings**
 (`src/embed.ts`): frozen ViT features for hybrid ReID, still never on the
 Rust motion path. Identity matching stays in `crates/identity`.
 
+**Amendment (2026-08-01) — LLM / VLM also stay in the TS orchestrator.**
+ROADMAP 2.1 originally asked for a Rust-side LLM provider “for the engine.”
+The engine never calls an LLM: it POSTs gated classify through the AI-free
+gateway to `services/agent-orchestrator` (`LlmProvider` / Ollama / stub).
+Shipping a Rust Ollama client with no consumer would be dead code and would
+duplicate the Super Agent DAG. Rust keeps `guardrails`, `rules`, and
+`identity`; chat/VLM inference remains Node, consistent with this ADR.
+The 2.1 “Rust-side provider” checkbox is closed by this amendment, not by
+porting `llm.ts`.
+
 ## Consequences
 
 - Detect latency on this workstation: p95 ≈ **41 ms** on YOLO11n (see

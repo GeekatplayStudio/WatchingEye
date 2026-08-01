@@ -52,6 +52,11 @@ import { speakFacts } from "./voice-speak.js";
 import type { SpeechRecognizer, SpeechSynthesizer } from "./voice.js";
 import { createSpeechRecognizer, WhisperUnavailableError } from "./whisper.js";
 import { createSpeechSynthesizer, PiperUnavailableError } from "./piper.js";
+import {
+  createAudioEventDetector,
+  resolveAudioEvent,
+  type AudioEventDetector,
+} from "./audio-event.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
@@ -72,6 +77,7 @@ export function buildOrchestrator(
   attrEmbedder?: AttrEmbedder,
   speechRecognizer?: SpeechRecognizer,
   speechSynthesizer?: SpeechSynthesizer,
+  audioEventDetector?: AudioEventDetector,
 ): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const ocr = ocrProvider ?? createDefaultOcrProvider();
@@ -81,6 +87,7 @@ export function buildOrchestrator(
   const attrEmbed = attrEmbedder ?? createDefaultAttrEmbedder();
   const speech = speechRecognizer ?? createSpeechRecognizer();
   const tts = speechSynthesizer ?? createSpeechSynthesizer();
+  const audioEvents = audioEventDetector ?? createAudioEventDetector();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -118,7 +125,25 @@ export function buildOrchestrator(
       attrEmbed: attrEmbed.name,
       whisper: speech.name,
       piper: tts.name,
+      audioEvent: audioEvents.name,
     };
+  });
+
+  /**
+   * Non-speech audio → closed AudioEvent (stub today; live classifier open).
+   * Body: `{ audioBase64, mimeType? }`.
+   */
+  app.post("/voice/audio-event", async (req, reply) => {
+    const body = req.body as { audioBase64?: string; mimeType?: string };
+    const result = await resolveAudioEvent({
+      audioBase64: body.audioBase64,
+      mimeType: body.mimeType,
+      detector: audioEvents,
+    });
+    if (result.outcome === "rejected" && result.rejectedReason === "audioBase64 is required") {
+      return reply.status(400).send(result);
+    }
+    return result;
   });
 
   /**

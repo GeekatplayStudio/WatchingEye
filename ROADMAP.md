@@ -17,10 +17,10 @@ done (exceptions require an ADR).
 |------|--------|
 | Phase 0 Foundation | ✅ done |
 | Phase 1 Edge detection | ✅ **1.1–1.5 done** (identities + pipeline events in SQLite) |
-| Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (best ~3.9 s `llava`) |
+| Phase 2 Super Agent | mostly done; **2.1** LLM in TS orchestrator ✅ (ADR 0004); **2.2** VLM &lt;300 ms **miss** |
 | Phase 3 Multi-cam / edge | **3.2–3.5** ✅ (ESP32 firmware pending hardware); MCP Camera/Timeline/Alert ✅ |
 | Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
-| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice STT/TTS/ask/PTT ✅; audio-events open) |
+| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice STT/TTS/ask/PTT/audio-stub ✅; live audio classifier open) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
 Durable multi-cam config + 4 synthetic pumps proven; live IP farms, firmware,
@@ -33,11 +33,9 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 | Priority | Item | Gap |
 |----------|------|-----|
 | P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
-| P2 | **2.1** Rust LLM provider | Orchestrator TS only |
-| P2 | **3.2** edge offline cache | Pi CI + SQLite gate-open cache + hub sync ✅; not a live-Pi smoke |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
-| P2 | **3.4** Split MCP | Camera / Timeline / Alert bins + client demo ✅ (read-only; no actuation) |
-| P2 | **V.1 / V.2** Voice | STT/TTS/ask/PTT duplex ✅; audio-events + always-on open |
+| P2 | **V.1** live audio classifier | Stub `AudioEvent` path ✅; YAMNet/similar still open |
+| P3 | Always-on voice | PTT duplex ✅; wake-word / continuous listen open |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
@@ -129,9 +127,12 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 - [x] LangGraph Super Agent DAG + zod guardrails
 - [x] MCP server (read-only) baseline (`list_cameras`, `recent_events`, `get_settings`)
 
-### Step 2.1 — Ollama / LLM abstraction (partial)
+### Step 2.1 — Ollama / LLM abstraction ✅
 - [x] `LlmProvider` + Ollama + stub; provenance on every response
-- [ ] Rust-side provider for the engine (currently TS only)
+- [x] LLM/VLM stays in the TS orchestrator — ADR 0004 amendment (2026-08-01);
+      engine never calls an LLM (classify via AI-free gateway). A Rust Ollama
+      client with no consumer would be dead code; Rust keeps guardrails/rules/
+      identity.
 
 ### Step 2.1b — AI-safety screening ✅
 - [x] `guardrails::safety` + orchestrator `screen.ts` mirror
@@ -289,7 +290,11 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
       (proxy only); `WATCHINGEYE_WHISPER=stub|auto|cli`; whisper.cpp CLI when
       `whisper-cli` + `models/voice/ggml-base.en.bin` present; Voice page
       transcript/upload panel; unknown phrases rejected (no LLM intent)
-- [ ] Audio-event detection (glass-break / bark / etc.)
+- [x] `AudioEvent` schema + stub detector + routes — closed kinds
+      `glass_break` \| `bark` \| `other`; orchestrator `POST /voice/audio-event`
+      + gateway proxy; unknown bytes reject (no false positives); Voice panel
+      stub fixture; low confidence rejected
+- [ ] Live audio classifier (YAMNet/similar) for glass-break / bark
 
 ### Step V.2 — Voice response (partial)
 - [x] `renderSpeech` from validated facts only (tested)
@@ -410,9 +415,10 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 28. ~~**V.1 Whisper STT → parse** — stub/cli + gateway proxy + Voice panel~~ ✅ (audio-events still open)
 29. ~~**V.2 Piper/stub TTS** — facts→speak route + Voice panel~~ ✅
 30. ~~**V.2 ask text path** — query_events → recall → speak~~ ✅
-31. ~~**V.2 live mic PTT duplex** — MediaRecorder → ask/command → play~~ ✅ (always-on still open)
-32. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
-33. **2.1 Rust LLM** / **V.1 audio-events** — next cliffs
+31. ~~**V.2 live mic PTT duplex** — MediaRecorder → ask/command → play~~ ✅
+32. ~~**V.1 audio-event stub** + **2.1 LLM-in-TS (ADR 0004)**~~ ✅
+33. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
+34. **V.1 live audio classifier (YAMNet)** / always-on wake-word — next cliffs
 
 ---
 
