@@ -33,6 +33,12 @@ import {
   createDefaultTextEmbedder,
   type TextEmbedder,
 } from "./text-embed.js";
+import {
+  createDefaultOpenVocabScorer,
+  enrichDescriptorsFromOpenVocab,
+  type OpenVocabHit,
+  type OpenVocabScorer,
+} from "./open-vocab.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
@@ -48,10 +54,12 @@ export function buildOrchestrator(
   provider?: LlmProvider,
   ocrProvider?: OcrProvider,
   textEmbedder?: TextEmbedder,
+  openVocabScorer?: OpenVocabScorer,
 ): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const ocr = ocrProvider ?? createDefaultOcrProvider();
   const textEmbed = textEmbedder ?? createDefaultTextEmbedder();
+  const openVocab = openVocabScorer ?? createDefaultOpenVocabScorer();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -83,6 +91,7 @@ export function buildOrchestrator(
       provider: provider?.name ?? "ollama",
       detector: modelAvailable() ? "yolo11n-onnx" : "unavailable",
       embedder: embedModelAvailable() ? "dinov2-vits14-onnx" : "unavailable",
+      openVocab: openVocab.name,
     };
   });
 
@@ -224,6 +233,7 @@ export function buildOrchestrator(
       // that was already refused.
       let identity: IdentificationOutcome | null = null;
       let descriptors = extractDescriptors(result.rawAnalysis);
+      let openVocabHits: OpenVocabHit[] = [];
       if (result.outcome !== "action") {
         descriptors = []; // refused output describes nothing we can rely on
       }
@@ -232,6 +242,12 @@ export function buildOrchestrator(
         const claimed = decided?.evidence
           ?.find((e) => e.label.startsWith("class:"))
           ?.label.slice("class:".length);
+        if (claimed !== undefined) {
+          openVocabHits = await openVocab.score(body.image ?? "", claimed);
+          const enriched = enrichDescriptorsFromOpenVocab(descriptors, openVocabHits);
+          descriptors = enriched.descriptors;
+          openVocabHits = enriched.added;
+        }
         if ((descriptors.length > 0 || embedModelAvailable()) && claimed !== undefined) {
           const appearance = await appearanceForClassify(body.image ?? "", claimed);
           identity = await identify(claimed, descriptors, parsed.data.cameraId, appearance);
@@ -266,6 +282,7 @@ export function buildOrchestrator(
         decision: result.decision,
         identity,
         descriptors,
+        openVocab: openVocabHits,
         plate,
         rejectionReason: result.rejectionReason,
         rawAnalysis: result.rawAnalysis,

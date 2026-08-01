@@ -269,8 +269,13 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
       crop → injectable `OcrProvider` → regex confirm → VLM regex fallback;
       gateway passes `anpr: true` and prefers orchestrator `plate` evidence.
       Enable tesseract with `WATCHINGEYE_OCR=tesseract` (soft-fail otherwise).
-- [ ] Breed/color extractor with confidence beyond VLM text (CLIP/SigLIP)
+- [x] Breed/color extractor with confidence beyond VLM text —
+      `open-vocab.ts`: HSV colour histogram banks (`fur_color` /
+      `vehicle_color`) + stub breed path (`WATCHINGEYE_OPEN_VOCAB=stub`);
+      merges into descriptors above a confidence floor without overwriting
+      VLM keys; not full CLIP/SigLIP weights yet
 - [ ] Dedicated Paddle/Fast-LPR plate detector when generic OCR misses
+- [ ] Full CLIP/SigLIP zero-shot ONNX banks for breed (weights optional)
 
 ### Step 6.3 — Multimodal vector dataset auto-builder (partial)
 - [x] Persist gated enrollments + DINOv2 vectors into pgvector with
@@ -312,9 +317,10 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
 12. ~~**2.1c** — text embedding semantic retriever~~ ✅
-13. **6.2 / 6.4 remaining** — CLIP attrs / Paddle-LPR / multimodal CLIP ← **next**
-14. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
-15. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
+13. ~~**6.2 breed/color open-vocab** — HSV banks + stub~~ ✅ (CLIP ONNX + Paddle still open)
+14. **6.2 / 6.4 remaining** — CLIP ONNX / Paddle-LPR / multimodal CLIP ← **next**
+15. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
+16. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
 
 ---
 
