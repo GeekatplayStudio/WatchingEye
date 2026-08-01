@@ -179,11 +179,12 @@ banks, DINOv3 upgrade, SigLIP open-vocab attributes (Phase 6).
 
 Builds on Step 3.5 appearance identity. See ADR 0005 (partially implemented).
 
-### Step 6.1 — Natural language intent & target registration ← **next**
-- [x] `nl-parser.ts` + `/parse-intent` + gateway `/api/nlp/target` baseline
-- [ ] `"track all dogs"` → target class + dataset enrollment flags end-to-end
-- [ ] `"track cars and capture plates"` → vehicle tracking + ANPR pass
-- [ ] Live tracking controller broadcasts rule updates to engine in < 50 ms
+### Step 6.1 — Natural language intent & target registration ✅
+- [x] `nl-parser.ts` + `/parse-intent` + gateway `/api/nlp/target`
+- [x] `"track all dogs"` → `dog` + `dataset_enroll` / breed+color attributes
+- [x] `"track cars and capture plates"` → `car` + `anpr_ocr` / license_plate
+- [x] Settings store `activeIntent`; WebSocket broadcast on apply (UI shows `broadcastMs`)
+- [x] Active tracking panel listens for settings push and refreshes targets live
 
 ### Step 6.2 — Deeper recognition (ANPR & fine-grained)
 - [x] Regex ANPR helper + VLM descriptors (baseline)

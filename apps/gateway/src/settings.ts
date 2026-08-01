@@ -23,6 +23,22 @@ export interface Settings {
    * suppression: nothing is silently discarded.
    */
   trackedClasses: string[];
+  /**
+   * Last natural-language tracking intent applied via `/api/nlp/target`.
+   * Presentation + ANPR/dataset flags; never executed by an LLM.
+   */
+  activeIntent: ActiveTrackingIntent | null;
+}
+
+/** Snapshot of a parsed NL tracking prompt stored in settings. */
+export interface ActiveTrackingIntent {
+  rawPrompt: string;
+  targetClasses: string[];
+  attributes: string[];
+  actionPolicy: string;
+  datasetEnroll: boolean;
+  anprEnabled: boolean;
+  appliedAt: string;
 }
 
 /** Every class the system can be asked to watch for. */
@@ -47,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
   policyMinConfidence: 0.95,
   allowedActions: ["notify", "log_only"],
   trackedClasses: ["person", "dog", "cat", "car", "truck", "package"],
+  activeIntent: null,
 };
 
 /** Validation error for a bad settings patch. */
@@ -76,6 +93,11 @@ export function applyPatch(current: Settings, patch: Partial<Settings>): Setting
   );
   if (unknown.length > 0) {
     throw new SettingsError(`unknown class(es): ${unknown.join(", ")}`);
+  }
+  if (patch.activeIntent !== undefined && patch.activeIntent !== null) {
+    if (typeof patch.activeIntent.rawPrompt !== "string") {
+      throw new SettingsError("activeIntent.rawPrompt must be a string");
+    }
   }
   return next;
 }

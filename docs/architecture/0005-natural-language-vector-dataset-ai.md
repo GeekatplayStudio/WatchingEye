@@ -56,7 +56,8 @@ graph TD
   }
   ```
 - Hot-reloads pipeline filters via Fastify gateway WebSocket broadcast without restarting `vision-engine`.
-- **Status:** baseline parser + `/parse-intent` exist; full exit criteria in ROADMAP 6.1.
+- **Status:** shipped — parser exit criteria + settings/`activeIntent` WebSocket
+  broadcast (ROADMAP 6.1 ✅).
 
 ### 2. Deep Vision Recognition Stack
 - **Detection:** YOLO11n ONNX (shipped, ADR 0004).

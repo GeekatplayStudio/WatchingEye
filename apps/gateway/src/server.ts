@@ -16,7 +16,7 @@ import cors from "@fastify/cors";
 import { createStore, type EventStore } from "./db.js";
 import type { DetectionEvent, ObjectClass } from "./events.js";
 import { classify, type ClassifyResult } from "./classify.js";
-import { applyPatch, DEFAULT_SETTINGS, SettingsError, type Settings } from "./settings.js";
+import { applyPatch, AVAILABLE_CLASSES, DEFAULT_SETTINGS, SettingsError, type Settings } from "./settings.js";
 import { globalDatasetStore, type DatasetRecord } from "./dataset.js";
 
 /** Options for building the server. */
@@ -164,6 +164,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     if (typeof body?.prompt !== "string" || body.prompt.trim() === "") {
       return reply.status(400).send({ error: "prompt string is required" });
     }
+    const started = Date.now();
     try {
       const res = await fetch(
         `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/parse-intent`,
@@ -175,16 +176,43 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         },
       );
       const parsed = (await res.json()) as {
+        rawPrompt?: string;
         targetClasses?: string[];
+        attributes?: string[];
         actionPolicy?: string;
+        datasetEnroll?: boolean;
+        anprEnabled?: boolean;
+        confidenceThreshold?: number;
       };
-      if (res.ok && Array.isArray(parsed.targetClasses)) {
-        const merged = Array.from(new Set([...settings.trackedClasses, ...parsed.targetClasses]));
-        settings = { ...settings, trackedClasses: merged };
-        const payload = JSON.stringify({ type: "settings", settings });
-        for (const socket of sockets) socket.send(payload);
+      if (!res.ok || !Array.isArray(parsed.targetClasses)) {
+        return reply.status(res.ok ? 502 : res.status).send({
+          error: "intent parse failed",
+          parsed,
+        });
       }
-      return { parsed, settings };
+      const allowed = new Set<string>([...AVAILABLE_CLASSES]);
+      const classes = parsed.targetClasses.filter((c) => allowed.has(c));
+      if (classes.length === 0) {
+        return reply.status(400).send({ error: "no known target classes in prompt" });
+      }
+      const merged = Array.from(new Set([...settings.trackedClasses, ...classes]));
+      const activeIntent = {
+        rawPrompt: parsed.rawPrompt ?? body.prompt,
+        targetClasses: classes,
+        attributes: Array.isArray(parsed.attributes) ? parsed.attributes : [],
+        actionPolicy: parsed.actionPolicy ?? "monitor",
+        datasetEnroll: parsed.datasetEnroll === true,
+        anprEnabled: parsed.anprEnabled === true,
+        appliedAt: new Date().toISOString(),
+      };
+      settings = applyPatch(settings, { trackedClasses: merged, activeIntent });
+      const payload = JSON.stringify({ type: "settings", settings });
+      for (const socket of sockets) socket.send(payload);
+      return {
+        parsed: { ...parsed, targetClasses: classes },
+        settings,
+        broadcastMs: Date.now() - started,
+      };
     } catch (err) {
       return reply.status(503).send({
         error: err instanceof Error ? `orchestrator unreachable: ${err.message}` : "orchestrator error",
