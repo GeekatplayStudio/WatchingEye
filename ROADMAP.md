@@ -20,7 +20,7 @@ closing them before more Phase 6 depth.
 | P0 | **1.1** File & USB camera backends | ~~File + USB~~ ✅ ffmpeg USB/V4L2 pump in vision-engine (same grid as RTSP; `camera` crate stays decode-free) |
 | P1 | **1.4** Tracker soak + snapshot fixtures | ~~no 100-frame soak / fixture snapshots~~ ✅ synthetic gray8 sequences + live `Engine::process` soak in CI |
 | P1 | **2.3** Rules → notify webhook | ~~Rule types exist; no HTTP webhook delivery~~ ✅ zone enter + webhook + determinism tests |
-| P1 | **2.2** VLM golden / latency | Golden CI ✅; opt-in GPU harness ✅; proven &lt;300 ms on GPU still open |
+| P1 | **2.2** VLM golden / latency | Golden CI ✅; harness ✅; RTX 3090 record ✅ (~4.6 s p95, budget **not** met) |
 | P1 | **2.4** Event replay UI | ~~no past-event pipeline replay~~ ✅ select + path + provenance (no pixel retention) |
 | P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
@@ -130,10 +130,11 @@ closing them before more Phase 6 depth.
 - [x] Gated classify path: snapshot → VLM → guardrails → identity
 - [x] Opt-in GPU latency benchmark harness —
       `classify-latency.bench.test.ts` + `npm run test:gpu-latency`
-      (`WATCHINGEYE_GPU_LATENCY=1`); times warm gate→decision on
-      `fixtures/golden-scene.png`; asserts &lt; 300 ms; skipped in default CI
-- [ ] Proven p95 &lt; 300 ms recorded on GPU hardware (run the harness and
-      keep a green result — CPU Ollama usually misses the budget)
+      (`WATCHINGEYE_GPU_LATENCY=1` assert, `=record` measure-only);
+      writes `docs/gpu-latency-results.{json,md}`
+- [ ] Proven p95 &lt; 300 ms on GPU — **measured miss** on RTX 3090 +
+      `qwen2.5vl:7b` (p95 ≈ 4.6 s, see `gpu-latency-results.md`); keep
+      open until a faster VLM path exists
 - [x] Fixture-image golden decision test in CI —
       `fixtures/golden-scene.png` + `golden-decision.test.ts` runs
       snapshot → StubProvider VLM → guardrails → `outcome: "action"`
@@ -319,7 +320,7 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 3. ~~**1.1** — file + USB camera backends (ffmpeg USB/V4L2 in vision-engine)~~ ✅
 4. ~~**2.3** — notify webhook from rules~~ ✅
 5. ~~**1.4** — tracker soak + gray-sequence snapshot fixtures~~ ✅
-6. ~~**2.2** — fixture-image golden + opt-in GPU latency harness~~ ✅ (proven &lt;300 ms on GPU still open)
+6. ~~**2.2** — fixture-image golden + opt-in GPU latency harness~~ ✅ (budget still open; RTX 3090 record shows ~4.6 s)
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
 8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP / text RAG still open)
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅
@@ -330,8 +331,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 14. ~~**6.2 CLIP ONNX zero-shot** — optional ViT-B/32 banks~~ ✅
 15. ~~**6.2 Paddle-LPR** — optional Python sidecar + cascade OCR~~ ✅
 16. ~~**6.4 multimodal CLIP search** — enroll CLIP-512 + hybrid recall~~ ✅
-17. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
-18. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
+17. ~~**2.2 latency record** — RTX 3090 + qwen2.5vl:7b p95 recorded (miss)~~ ✅
+18. **1.2 motion soak** — 1000-frame static → zero detector invocations ← **next**
+19. **1.3 remaining** — Rust YOLO when unblocked / &lt;100 ms detect
 
 ---
 

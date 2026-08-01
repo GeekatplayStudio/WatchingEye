@@ -1,0 +1,12 @@
+{
+  "recordedAt": "2026-08-01T21:42:17.848Z",
+  "hardware": "NVIDIA GeForce RTX 3090 (24 GB), driver 610.62, Windows 10.0.26200",
+  "model": "qwen2.5vl:7b",
+  "samplesMs": [4578, 4552, 4625],
+  "p50Ms": 4578,
+  "p95Ms": 4625,
+  "budgetMs": 300,
+  "budgetMet": false,
+  "mode": "record",
+  "notes": "p95 over budget on this hardware/model. qwen2.5vl:7b typically needs multiple seconds per warm classify even on RTX 3090-class GPUs. Keep the proven-<300ms checkbox open until a faster VLM path exists."
+}
