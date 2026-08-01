@@ -250,8 +250,12 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 
 ### Step 6.2 — Deeper recognition (ANPR & fine-grained) (partial)
 - [x] Regex ANPR on live classify when `anprEnabled` (gateway `anpr.ts`)
-- [ ] Real OCR ANPR; breed/color extractor with confidence beyond VLM text
-- [ ] Dedicated OCR model path (Paddle/Fast-LPR) when regex misses
+- [x] Real OCR ANPR path — orchestrator `plate-ocr.ts`: vehicle plate-band
+      crop → injectable `OcrProvider` → regex confirm → VLM regex fallback;
+      gateway passes `anpr: true` and prefers orchestrator `plate` evidence.
+      Enable tesseract with `WATCHINGEYE_OCR=tesseract` (soft-fail otherwise).
+- [ ] Breed/color extractor with confidence beyond VLM text (CLIP/SigLIP)
+- [ ] Dedicated Paddle/Fast-LPR plate detector when generic OCR misses
 
 ### Step 6.3 — Multimodal vector dataset auto-builder (partial)
 - [x] Persist gated enrollments + DINOv2 vectors into pgvector with
@@ -282,10 +286,11 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 6. ~~**2.2** — fixture-image golden decision in CI~~ ✅ (GPU &lt;300 ms latency still open)
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
 8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP / text RAG still open)
-9. **6.2** — real OCR ANPR / fine-grained extractors ← **next**
-10. **6.4 / 2.1c** — NL recall + text semantic retriever
+9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅ (CLIP breed/color + Paddle still open)
+10. **6.4 / 2.1c** — NL recall + text semantic retriever ← **next**
 11. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
 12. **2.2 latency** — GPU benchmark when hardware is available
+13. **6.2 remaining** — CLIP attrs / Paddle-LPR when needed
 
 ---
 

@@ -23,17 +23,29 @@ import {
 import { TriggerEventSchema } from "./schema.js";
 import { parseNaturalLanguageIntent } from "./nl-parser.js";
 import { resolveVlmModel, type ModelResolution } from "./vlm-model.js";
+import {
+  createDefaultOcrProvider,
+  recognizePlate,
+  type OcrProvider,
+  type PlateRecognition,
+} from "./plate-ocr.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
   event: unknown;
   /** Base64 JPEG of the gated frame, without a data: prefix. */
   image?: string;
+  /** When true, run the plate OCR → regex path after VLM. */
+  anpr?: boolean;
 }
 
-/** Build the service. `provider` is injectable for tests. */
-export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
+/** Build the service. Providers are injectable for tests. */
+export function buildOrchestrator(
+  provider?: LlmProvider,
+  ocrProvider?: OcrProvider,
+): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
+  const ocr = ocrProvider ?? createDefaultOcrProvider();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -203,11 +215,35 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
         }
       }
 
+      let plate: PlateRecognition | null = null;
+      if (body.anpr === true) {
+        const vehicleBbox = await vehicleBboxForAnpr(body.image ?? "");
+        const haystack = [
+          result.rawAnalysis,
+          ...descriptors.map((d) => `${d.key} ${d.value}`),
+        ].join(" ");
+        plate = await recognizePlate({
+          imageBase64: body.image ?? "",
+          vehicleBbox,
+          vlmText: haystack,
+          ocr,
+        });
+        if (plate !== null) {
+          if (!descriptors.some((d) => d.key === "license_plate")) {
+            descriptors = [
+              ...descriptors,
+              { key: "license_plate", value: plate.plateText.toLowerCase() },
+            ];
+          }
+        }
+      }
+
       return {
         outcome: result.outcome,
         decision: result.decision,
         identity,
         descriptors,
+        plate,
         rejectionReason: result.rejectionReason,
         rawAnalysis: result.rawAnalysis,
         latencyMs: Date.now() - started,
@@ -254,5 +290,19 @@ async function appearanceForClassify(
     return result.embedding;
   } catch {
     return null;
+  }
+}
+
+/** Best vehicle box for the plate band (car/truck), if YOLO is available. */
+async function vehicleBboxForAnpr(imageBase64: string): Promise<NormBBox | undefined> {
+  if (imageBase64 === "" || !modelAvailable()) return undefined;
+  try {
+    const det = await detect(imageBase64);
+    const hit = det.objects
+      .filter((o) => o.class === "car" || o.class === "truck")
+      .sort((a, b) => b.confidence - a.confidence)[0];
+    return hit?.bbox;
+  } catch {
+    return undefined;
   }
 }

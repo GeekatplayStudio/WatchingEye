@@ -23,6 +23,17 @@ export interface IntentApplyInput {
   evidence: EvidenceItem[];
   /** Orchestrator raw VLM text, when present. */
   rawAnalysis?: string;
+  /**
+   * Plate already resolved by the orchestrator OCR path. Preferred over
+   * local regex when present.
+   */
+  plate?: {
+    plateText: string;
+    confidence: number;
+    confirmed: boolean;
+    source: "ocr" | "regex_vlm";
+    ocrModel?: string;
+  } | null;
   intent: ActiveTrackingIntent | null;
 }
 
@@ -58,7 +69,37 @@ export function applyActiveIntent(input: IntentApplyInput): IntentApplyResult {
     licensePlate = plateFromEvidence.toUpperCase();
   }
 
-  if (intent?.anprEnabled === true) {
+  if (intent?.anprEnabled === true && input.plate != null) {
+    licensePlate = input.plate.plateText;
+    ocrUnconfirmed = !input.plate.confirmed;
+    if (!descriptors.some((d) => d.key === "license_plate")) {
+      descriptors.push({ key: "license_plate", value: input.plate.plateText.toLowerCase() });
+    }
+    const sourceNote =
+      input.plate.source === "ocr"
+        ? `OCR (${input.plate.ocrModel ?? "ocr"})`
+        : "regex over VLM text";
+    if (!evidence.some((e) => e.label.startsWith("plate:"))) {
+      evidence = [
+        ...evidence,
+        {
+          label: `plate:${input.plate.plateText}`,
+          description: input.plate.confirmed
+            ? `ANPR ${sourceNote} matched ${input.plate.plateText} (${input.plate.confidence.toFixed(2)})`
+            : `ANPR weak match ${input.plate.plateText} — ocr_unconfirmed`,
+        },
+      ];
+    }
+    if (ocrUnconfirmed && !evidence.some((e) => e.label === "ocr_unconfirmed")) {
+      evidence = [
+        ...evidence,
+        {
+          label: "ocr_unconfirmed",
+          description: `Plate ${input.plate.plateText} below confirmation floor`,
+        },
+      ];
+    }
+  } else if (intent?.anprEnabled === true && licensePlate === undefined) {
     const haystack = [
       input.rawAnalysis ?? "",
       ...descriptors.map((d) => `${d.key} ${d.value}`),

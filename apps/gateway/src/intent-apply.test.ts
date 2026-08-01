@@ -75,4 +75,27 @@ describe("applyActiveIntent", () => {
     expect(out.evidence.some((e) => e.label === "plate:ABC-1234")).toBe(true);
     expect(out.ocrUnconfirmed).toBe(false);
   });
+
+  it("prefers orchestrator OCR plate over local regex haystack", () => {
+    const out = applyActiveIntent({
+      objectClass: "car",
+      descriptors: [],
+      evidence: [],
+      rawAnalysis: "ignores VLM plate ZZZ-0000",
+      plate: {
+        plateText: "OCR-9999",
+        confidence: 0.92,
+        confirmed: true,
+        source: "ocr",
+        ocrModel: "stub-ocr-1",
+      },
+      intent: intent({
+        anprEnabled: true,
+        actionPolicy: "anpr_ocr",
+        attributes: ["license_plate"],
+      }),
+    });
+    expect(out.licensePlate).toBe("OCR-9999");
+    expect(out.evidence.some((e) => e.description.includes("OCR"))).toBe(true);
+  });
 });

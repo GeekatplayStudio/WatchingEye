@@ -54,6 +54,15 @@ export interface ClassifyResult {
   identity?: IdentityOutcome | null;
   /** Identifying attributes the model reported. */
   descriptors?: Array<{ key: string; value: string }>;
+  /** Orchestrator plate OCR / regex result when `anpr` was requested. */
+  plate?: {
+    plateText: string;
+    confidence: number;
+    confirmed: boolean;
+    source: "ocr" | "regex_vlm";
+    ocrModel?: string;
+    ocrConfidence?: number;
+  } | null;
   /** Raw VLM text (for deterministic ANPR / debugging). */
   rawAnalysis?: string;
   rejectionReason?: string;
@@ -63,13 +72,21 @@ export interface ClassifyResult {
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL ?? "http://localhost:8085";
 
 /** Send one gated event for classification. Never throws. */
-export async function classify(event: unknown, image: string): Promise<ClassifyResult> {
+export async function classify(
+  event: unknown,
+  image: string,
+  opts: { anpr?: boolean } = {},
+): Promise<ClassifyResult> {
   const started = Date.now();
   try {
     const res = await fetch(`${ORCHESTRATOR_URL}/classify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event, image }),
+      body: JSON.stringify({
+        event,
+        image,
+        ...(opts.anpr === true ? { anpr: true } : {}),
+      }),
       signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) {

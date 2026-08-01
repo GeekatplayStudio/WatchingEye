@@ -33,7 +33,11 @@ import { applyActiveIntent } from "./intent-apply.js";
 export interface ServerOptions {
   databaseUrl?: string | undefined;
   /** Injectable classifier so tests need no orchestrator or model. */
-  classifier?: (event: unknown, image: string) => Promise<ClassifyResult>;
+  classifier?: (
+    event: unknown,
+    image: string,
+    opts?: { anpr?: boolean },
+  ) => Promise<ClassifyResult>;
   /**
    * Injectable appearance embedder (orchestrator `/embed` proxy). Tests may
    * supply a fixed 384-d vector; production calls the orchestrator.
@@ -308,7 +312,8 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
       location: body.event.cameraId,
     });
 
-    const result = await classifier(body.event, body.image ?? "");
+    const anpr = settings.activeIntent?.anprEnabled === true;
+    const result = await classifier(body.event, body.image ?? "", { anpr });
     const decision = result.decision;
     const claimed = decision?.evidence.find((e) => e.label.startsWith("class:"));
 
@@ -355,6 +360,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
       descriptors: result.descriptors ?? [],
       evidence: event.evidence,
       rawAnalysis: result.rawAnalysis,
+      plate: result.plate,
       intent,
     });
     event.evidence = applied.evidence;

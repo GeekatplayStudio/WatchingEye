@@ -62,7 +62,9 @@ graph TD
 ### 2. Deep Vision Recognition Stack
 - **Detection:** YOLO11n ONNX (shipped, ADR 0004).
 - **Appearance ReID:** DINOv2-small ONNX global descriptors → Rust dual-bank memory (shipped, Step 3.5).
-- **ANPR:** regex / VLM text today; real OCR still planned.
+- **ANPR:** orchestrator OCR provider path (`plate-ocr.ts`) + regex confirm +
+  VLM regex fallback; gateway stays AI-free. Tesseract optional via
+  `WATCHINGEYE_OCR=tesseract`. Paddle/Fast-LPR still planned.
 - **Open-vocab attributes:** SigLIP/CLIP for breed/color/make — planned (ROADMAP 6.2).
 - **Identity Registry:** `identity` crate — attrs ⊕ appearance; distinctive refute; Hungarian batch; multi-cam timeline (shipped).
 
