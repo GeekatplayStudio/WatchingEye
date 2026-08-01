@@ -67,25 +67,29 @@ graph TD
 - **Identity Registry:** `identity` crate — attrs ⊕ appearance; distinctive refute; Hungarian batch; multi-cam timeline (shipped).
 
 ### 3. Vector Database & Dataset Auto-Builder (`apps/gateway/src/vector-db.ts`)
-- Stores every event with multimodal embeddings into `pgvector`:
+- Stores gated enrollments with DINOv2 appearance embeddings into `pgvector`:
   ```sql
   CREATE TABLE dataset_events (
-      id UUID PRIMARY KEY,
-      object_id UUID NOT NULL,
+      id TEXT PRIMARY KEY,
+      object_id TEXT NOT NULL,
       camera_id TEXT NOT NULL,
       class TEXT NOT NULL,
       breed_or_model TEXT,
       license_plate TEXT,
-      confidence FLOAT NOT NULL,
+      confidence REAL NOT NULL,
       timestamp TIMESTAMPTZ NOT NULL,
-      bbox JSONB NOT NULL,
-      trajectory JSONB,
-      snapshot_path TEXT NOT NULL,
-      embedding vector(512),
+      evidence JSONB NOT NULL,
+      descriptors JSONB,
+      snapshot_ref TEXT NOT NULL,
+      embedding vector(384),          -- DINOv2-small (not CLIP-512)
+      embed_model TEXT,
       provenance JSONB NOT NULL
   );
   ```
-- **Status:** not shipped; DINOv2 vectors today live only in the in-memory identity gallery.
+- **Status (partial):** `CREATE EXTENSION vector` + `dataset_events` migrate;
+  classify enroll best-effort embeds via orchestrator `/embed` and persists
+  provenance; in-memory cosine search always works; Postgres path when
+  `DATABASE_URL` is set. CLIP/text RAG and NL recall (6.4) still open.
 
 ### 4. Natural Language Recall & Grounded RAG Search
 - Planned: hybrid vector + SQL recall with `verifyGrounded` (keyword RAG exists).

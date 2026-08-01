@@ -1,5 +1,5 @@
-# Local infrastructure: Postgres with pgvector (event storage now,
-# RAG embeddings later). Start with: docker compose up -d
+# Local infrastructure: Postgres with pgvector (events JSONB +
+# dataset_events appearance vectors). Start with: docker compose up -d
 services:
   postgres:
     image: pgvector/pgvector:pg17

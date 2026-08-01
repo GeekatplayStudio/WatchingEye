@@ -1,9 +1,27 @@
 /**
  * Multimodal Dataset Store & Event Recall Engine.
  *
- * Persists Who, When, What evidence metadata and provides natural language
- * recall search across historical events and registered objects.
+ * Persists Who/When/What evidence metadata (and optional appearance
+ * embeddings). Keyword search stays available; cosine nearest-neighbour is
+ * implemented by each backend. Gateway never computes embeddings — callers
+ * supply vectors from the orchestrator embed relay.
  */
+
+/** DINOv2-small output width — must match orchestrator `EMBED_DIM`. */
+export const DATASET_EMBED_DIM = 384;
+
+/** Default embed model id recorded in provenance when DINOv2 succeeds. */
+export const DATASET_EMBED_MODEL = "dinov2-vits14-onnx";
+
+/** Provenance attached when an enrollment was classified / embedded. */
+export interface DatasetProvenance {
+  model_version: string;
+  prompt_version: string;
+  input_images: string[];
+  timestamp: string;
+  /** Appearance model when a vector was stored. */
+  embed_model?: string;
+}
 
 export interface DatasetRecord {
   id: string;
@@ -17,9 +35,62 @@ export interface DatasetRecord {
   confidence: number;
   evidence: Array<{ label: string; description: string }>;
   snapshotRef: string;
+  /** L2-ready appearance vector (length `DATASET_EMBED_DIM`) when embedded. */
+  embedding?: number[];
+  embedModel?: string;
+  provenance?: DatasetProvenance;
 }
 
-export class DatasetStore {
+/** Backend contract — memory or Postgres/pgvector. */
+export interface DatasetStoreLike {
+  insertRecord(record: DatasetRecord): Promise<void>;
+  search(query: string, limit?: number): Promise<DatasetRecord[]>;
+  /** Cosine nearest neighbours; empty when no vectors are stored. */
+  searchByEmbedding(embedding: number[], limit?: number): Promise<DatasetRecord[]>;
+  getAll(limit?: number): Promise<DatasetRecord[]>;
+  clear(): Promise<void> | void;
+  close?(): Promise<void>;
+}
+
+/**
+ * Cosine similarity in [−1, 1]. Returns 0 when dimensions disagree or a
+ * vector is zero-length.
+ *
+ * @example
+ * cosineSimilarity([1, 0], [1, 0]); // 1
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+function keywordMatch(r: DatasetRecord, q: string): boolean {
+  if (r.class.toLowerCase().includes(q)) return true;
+  if (r.licensePlate?.toLowerCase().includes(q)) return true;
+  if (r.breedOrModel?.toLowerCase().includes(q)) return true;
+  if (r.objectId.toLowerCase().includes(q)) return true;
+  if (r.descriptors?.some((d) => d.value.toLowerCase().includes(q) || d.key.toLowerCase().includes(q))) {
+    return true;
+  }
+  if (r.evidence?.some((e) => e.label.toLowerCase().includes(q) || e.description.toLowerCase().includes(q))) {
+    return true;
+  }
+  return false;
+}
+
+/** In-memory fallback (also used in tests). */
+export class DatasetStore implements DatasetStoreLike {
   private records: DatasetRecord[] = [];
 
   public async insertRecord(record: DatasetRecord): Promise<void> {
@@ -32,18 +103,15 @@ export class DatasetStore {
   public async search(query: string, limit = 50): Promise<DatasetRecord[]> {
     const q = query.toLowerCase().trim();
     if (!q) return this.records.slice(0, limit);
+    return this.records.filter((r) => keywordMatch(r, q)).slice(0, limit);
+  }
 
-    return this.records
-      .filter((r) => {
-        if (r.class.toLowerCase().includes(q)) return true;
-        if (r.licensePlate && r.licensePlate.toLowerCase().includes(q)) return true;
-        if (r.breedOrModel && r.breedOrModel.toLowerCase().includes(q)) return true;
-        if (r.objectId.toLowerCase().includes(q)) return true;
-        if (r.descriptors && r.descriptors.some((d) => d.value.toLowerCase().includes(q) || d.key.toLowerCase().includes(q))) return true;
-        if (r.evidence && r.evidence.some((e) => e.label.toLowerCase().includes(q) || e.description.toLowerCase().includes(q))) return true;
-        return false;
-      })
-      .slice(0, limit);
+  public async searchByEmbedding(embedding: number[], limit = 50): Promise<DatasetRecord[]> {
+    const scored = this.records
+      .filter((r) => r.embedding !== undefined && r.embedding.length === embedding.length)
+      .map((r) => ({ r, score: cosineSimilarity(embedding, r.embedding!) }))
+      .sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit).map((s) => s.r);
   }
 
   public async getAll(limit = 50): Promise<DatasetRecord[]> {

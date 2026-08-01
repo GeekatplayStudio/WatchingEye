@@ -239,14 +239,30 @@ describe("class filtering", () => {
 describe("activeIntent pipeline gating", () => {
   it("enrolls into the dataset by default", async () => {
     globalDatasetStore.clear();
-    const app = await buildServer({ classifier: async () => decisionResult("person") });
+    const unit = new Array<number>(384).fill(0);
+    unit[0] = 1;
+    const app = await buildServer({
+      classifier: async () => decisionResult("person"),
+      embedder: async () => ({ values: unit, model: "dinov2-vits14-onnx" }),
+    });
     await app.inject({
       method: "POST",
       url: "/api/classify",
-      payload: { event: GATED_EVENT, image: "" },
+      payload: { event: GATED_EVENT, image: "dGVzdA==" },
     });
     const search = await app.inject({ method: "GET", url: "/api/dataset/search?q=person" });
     expect(search.json().records.length).toBeGreaterThan(0);
+    expect(search.json().records[0].embedModel).toBe("dinov2-vits14-onnx");
+    expect(search.json().records[0].embedding).toHaveLength(384);
+    expect(search.json().records[0].provenance.embed_model).toBe("dinov2-vits14-onnx");
+
+    const similar = await app.inject({
+      method: "POST",
+      url: "/api/dataset/similar",
+      payload: { embedding: unit, limit: 5 },
+    });
+    expect(similar.statusCode).toBe(200);
+    expect(similar.json().records[0].id).toBe(search.json().records[0].id);
     await app.close();
   });
 

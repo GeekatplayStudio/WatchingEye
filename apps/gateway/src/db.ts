@@ -56,6 +56,7 @@ export class PgEventStore implements EventStore {
 
   /** Create the events table if missing. */
   async migrate(): Promise<void> {
+    await this.pool.query(`CREATE EXTENSION IF NOT EXISTS vector`);
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY,

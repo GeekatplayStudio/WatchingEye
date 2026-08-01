@@ -18,7 +18,15 @@ import { createStore, type EventStore } from "./db.js";
 import type { DetectionEvent, ObjectClass } from "./events.js";
 import { classify, type ClassifyResult } from "./classify.js";
 import { applyPatch, AVAILABLE_CLASSES, DEFAULT_SETTINGS, SettingsError, type Settings } from "./settings.js";
-import { globalDatasetStore, type DatasetRecord } from "./dataset.js";
+import {
+  DATASET_EMBED_DIM,
+  DATASET_EMBED_MODEL,
+  globalDatasetStore,
+  type DatasetProvenance,
+  type DatasetRecord,
+  type DatasetStoreLike,
+} from "./dataset.js";
+import { createDatasetStore } from "./vector-db.js";
 import { applyActiveIntent } from "./intent-apply.js";
 
 /** Options for building the server. */
@@ -26,6 +34,11 @@ export interface ServerOptions {
   databaseUrl?: string | undefined;
   /** Injectable classifier so tests need no orchestrator or model. */
   classifier?: (event: unknown, image: string) => Promise<ClassifyResult>;
+  /**
+   * Injectable appearance embedder (orchestrator `/embed` proxy). Tests may
+   * supply a fixed 384-d vector; production calls the orchestrator.
+   */
+  embedder?: (image: string) => Promise<{ values: number[]; model: string } | null>;
 }
 
 /** Body of a classification request from the dashboard. */
@@ -41,14 +54,47 @@ interface ClassifyBody {
   image?: string;
 }
 
+/** Orchestrator embed response shape (gateway relays, never interprets). */
+interface EmbedResponse {
+  embedding?: { values?: number[]; model?: string; dim?: number };
+}
+
+async function defaultEmbedder(image: string): Promise<{ values: number[]; model: string } | null> {
+  if (image === "") return null;
+  try {
+    const res = await fetch(
+      `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/embed`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as EmbedResponse;
+    const values = body.embedding?.values;
+    if (!Array.isArray(values) || values.length !== DATASET_EMBED_DIM) return null;
+    return {
+      values,
+      model: body.embedding?.model ?? DATASET_EMBED_MODEL,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Build the gateway server with all routes registered. */
 export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   await app.register(cors, { origin: true });
   await app.register(websocket);
 
-  const store: EventStore = await createStore(opts.databaseUrl ?? process.env.DATABASE_URL);
+  const databaseUrl = opts.databaseUrl ?? process.env.DATABASE_URL;
+  const store: EventStore = await createStore(databaseUrl);
+  const datasetStore: DatasetStoreLike = await createDatasetStore(databaseUrl);
   const classifier = opts.classifier ?? classify;
+  const embedder = opts.embedder ?? defaultEmbedder;
   let settings: Settings = { ...DEFAULT_SETTINGS };
   const sockets = new Set<{ send: (data: string) => void }>();
   /** Cameras become known when they send frames — nothing is pre-registered. */
@@ -234,7 +280,20 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   app.get("/api/dataset/search", async (req) => {
     const { q, limit } = req.query as { q?: string; limit?: string };
     const n = Math.min(Number(limit ?? 50) || 50, 500);
-    const records = await globalDatasetStore.search(q ?? "", n);
+    const records = await datasetStore.search(q ?? "", n);
+    return { records };
+  });
+
+  /** Cosine nearest neighbours over enrolled appearance vectors. */
+  app.post("/api/dataset/similar", async (req, reply) => {
+    const body = req.body as { embedding?: number[]; limit?: number };
+    if (!Array.isArray(body?.embedding) || body.embedding.length !== DATASET_EMBED_DIM) {
+      return reply.status(400).send({
+        error: `embedding must be a ${DATASET_EMBED_DIM}-float array`,
+      });
+    }
+    const n = Math.min(Number(body.limit ?? 20) || 20, 100);
+    const records = await datasetStore.searchByEmbedding(body.embedding, n);
     return { records };
   });
 
@@ -325,6 +384,13 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     await broadcast(event);
 
     if (applied.shouldEnroll) {
+      const snapshotRef = body.event.snapshotRef ?? `snap-${event.id}`;
+      const provenance: DatasetProvenance = event.provenance ?? {
+        model_version: event.model,
+        prompt_version: event.promptVersion ?? "unknown",
+        input_images: [snapshotRef],
+        timestamp: event.timestamp,
+      };
       const record: DatasetRecord = {
         id: `ds-${event.id}`,
         objectId: event.objectId,
@@ -333,12 +399,29 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         timestamp: event.timestamp,
         confidence: event.confidence,
         evidence: event.evidence,
-        snapshotRef: body.event.snapshotRef ?? `snap-${event.id}`,
+        snapshotRef,
+        provenance,
       };
       if (event.descriptors !== undefined) record.descriptors = event.descriptors;
       if (applied.licensePlate !== undefined) record.licensePlate = applied.licensePlate;
       if (applied.breedOrModel !== undefined) record.breedOrModel = applied.breedOrModel;
-      await globalDatasetStore.insertRecord(record);
+
+      const image = typeof body.image === "string" ? body.image : "";
+      const embedded = await embedder(image);
+      if (embedded !== null) {
+        record.embedding = embedded.values;
+        record.embedModel = embedded.model;
+        provenance.embed_model = embedded.model;
+        record.provenance = provenance;
+      }
+
+      await datasetStore.insertRecord(record);
+      // Keep the global memory mirror in sync when Postgres is the primary
+      // store so local tooling that imports `globalDatasetStore` still sees
+      // the latest enrollment in-process.
+      if (datasetStore !== globalDatasetStore) {
+        await globalDatasetStore.insertRecord(record);
+      }
     }
 
     return {
@@ -358,6 +441,9 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
 
   app.addHook("onClose", async () => {
     await store.close();
+    if (datasetStore.close !== undefined) {
+      await datasetStore.close();
+    }
   });
 
   return app;

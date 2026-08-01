@@ -1,41 +1,82 @@
+/**
+ * Pure helpers for the multimodal dataset (no Postgres required in CI).
+ */
 import { describe, expect, it } from "vitest";
-import { DatasetStore, type DatasetRecord } from "./dataset.js";
+import {
+  cosineSimilarity,
+  DATASET_EMBED_DIM,
+  DatasetStore,
+  type DatasetRecord,
+} from "./dataset.js";
+import { parseVector, toVectorLiteral } from "./vector-db.js";
 
-describe("DatasetStore", () => {
-  it("stores and searches dataset records by keyword", async () => {
+function unit(i: number): number[] {
+  const v = new Array<number>(DATASET_EMBED_DIM).fill(0);
+  v[i % DATASET_EMBED_DIM] = 1;
+  return v;
+}
+
+function baseRecord(id: string, embedding?: number[]): DatasetRecord {
+  const record: DatasetRecord = {
+    id,
+    objectId: `obj-${id}`,
+    class: "person",
+    cameraId: "cam-1",
+    timestamp: new Date().toISOString(),
+    confidence: 0.97,
+    evidence: [{ label: "walking", description: "Subject walking" }],
+    snapshotRef: `snap-${id}`,
+    provenance: {
+      model_version: "stub",
+      prompt_version: "classify-v2-identity",
+      input_images: [`snap-${id}`],
+      timestamp: new Date().toISOString(),
+    },
+  };
+  if (embedding !== undefined) {
+    record.embedding = embedding;
+    record.embedModel = "dinov2-vits14-onnx";
+  }
+  return record;
+}
+
+describe("cosineSimilarity", () => {
+  it("returns 1 for identical unit vectors", () => {
+    expect(cosineSimilarity(unit(0), unit(0))).toBeCloseTo(1);
+  });
+
+  it("returns 0 for orthogonal unit vectors", () => {
+    expect(cosineSimilarity(unit(0), unit(1))).toBeCloseTo(0);
+  });
+});
+
+describe("vector literals", () => {
+  it("round-trips through the pgvector text form", () => {
+    const v = [0.1, -0.2, 0.3];
+    expect(toVectorLiteral(v)).toBe("[0.1,-0.2,0.3]");
+    expect(parseVector(toVectorLiteral(v))).toEqual(v);
+  });
+});
+
+describe("DatasetStore embeddings", () => {
+  it("ranks nearest neighbours by cosine similarity", async () => {
     const store = new DatasetStore();
-    const r1: DatasetRecord = {
-      id: "ds-1",
-      objectId: "obj-dog-1",
-      class: "dog",
-      cameraId: "cam-1",
-      timestamp: new Date().toISOString(),
-      breedOrModel: "Golden Retriever",
-      confidence: 0.95,
-      evidence: [{ label: "breed:golden_retriever", description: "Golden retriever dog" }],
-      snapshotRef: "snap-1",
-    };
-    const r2: DatasetRecord = {
-      id: "ds-2",
-      objectId: "obj-car-1",
-      class: "car",
-      cameraId: "cam-1",
-      timestamp: new Date().toISOString(),
-      licensePlate: "ABC-1234",
-      confidence: 0.98,
-      evidence: [{ label: "plate:ABC-1234", description: "License plate ABC-1234" }],
-      snapshotRef: "snap-2",
-    };
+    await store.insertRecord(baseRecord("a", unit(0)));
+    await store.insertRecord(baseRecord("b", unit(1)));
+    await store.insertRecord(baseRecord("c")); // no vector
 
-    await store.insertRecord(r1);
-    await store.insertRecord(r2);
+    const hits = await store.searchByEmbedding(unit(0), 5);
+    expect(hits.map((h) => h.id)).toEqual(["a", "b"]);
+    expect(hits[0]?.id).toBe("a");
+  });
 
-    const dogResults = await store.search("golden");
-    expect(dogResults).toHaveLength(1);
-    expect(dogResults[0]?.objectId).toBe("obj-dog-1");
-
-    const plateResults = await store.search("ABC-1234");
-    expect(plateResults).toHaveLength(1);
-    expect(plateResults[0]?.objectId).toBe("obj-car-1");
+  it("keeps keyword search working alongside vectors", async () => {
+    const store = new DatasetStore();
+    const plate = baseRecord("plate", unit(2));
+    plate.licensePlate = "XYZ-9876";
+    await store.insertRecord(plate);
+    const hits = await store.search("XYZ-9876");
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.embedding).toHaveLength(DATASET_EMBED_DIM);
   });
 });
