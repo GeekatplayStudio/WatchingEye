@@ -1,4 +1,4 @@
-//! ONNX Runtime YOLO11n backend for [`crate::Detector`] (ROADMAP 1.3).
+//! ONNX Runtime `YOLO11n` backend for [`crate::Detector`] (ROADMAP 1.3).
 //!
 //! Enabled with `--features ort`. Soft-fails construction when the model file
 //! is missing; live vision-engine stays AI-free unless an operator injects this
@@ -26,7 +26,7 @@ pub fn default_model_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models/vision/yolo11n.onnx")
 }
 
-/// YOLO11n detector backed by ONNX Runtime.
+/// `YOLO11n` detector backed by ONNX Runtime.
 pub struct OnnxYoloDetector {
     session: Session,
     min_confidence: f32,
@@ -34,7 +34,7 @@ pub struct OnnxYoloDetector {
 
 impl OnnxYoloDetector {
     /**
-     * Load YOLO11n from `model_path`.
+     * Load `YOLO11n` from `model_path`.
      *
      * # Errors
      * [`DetectorError::Inference`] when the file is missing or ORT fails.

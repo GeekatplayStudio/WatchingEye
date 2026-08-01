@@ -4,7 +4,7 @@
 
 use schemas::ObjectClass;
 
-/// Square input size YOLO11n was exported at.
+/// Square input size `YOLO11n` was exported at.
 pub const INPUT_SIZE: usize = 640;
 /// Anchor count for a 640×640 input.
 pub const ANCHORS: usize = 8400;
@@ -202,19 +202,23 @@ pub fn decode(
     if anchors == 0 || data.len() < 84 * anchors {
         return Vec::new();
     }
-    let input_size_f = input_size as f32;
+    // YOLO input sizes are small (e.g. 640); clamp via u16 for an exact f32 cast.
+    let input_size_f = f32::from(u16::try_from(input_size).unwrap_or(u16::MAX));
     let mut out = Vec::new();
     for i in 0..anchors {
         let mut best = 0.0_f32;
-        let mut best_class: isize = -1;
+        let mut best_class: Option<usize> = None;
         for c in 0..COCO_CLASSES.len() {
             let score = data[(4 + c) * anchors + i];
             if score > best {
                 best = score;
-                best_class = c as isize;
+                best_class = Some(c);
             }
         }
-        if best < min_confidence || best_class < 0 {
+        let Some(class_idx) = best_class else {
+            continue;
+        };
+        if best < min_confidence {
             continue;
         }
         let cx = data[i];
@@ -227,7 +231,7 @@ pub fn decode(
         {
             continue;
         }
-        let coco = COCO_CLASSES[best_class as usize];
+        let coco = COCO_CLASSES[class_idx];
         out.push(DecodedBox {
             class: map_class(coco),
             coco_label: coco.to_owned(),
@@ -262,7 +266,7 @@ mod tests {
         data[anchors + i] = 320.0;
         data[2 * anchors + i] = 128.0;
         data[3 * anchors + i] = 320.0;
-        data[(4 + 0) * anchors + i] = 0.9; // person
+        data[4 * anchors + i] = 0.9; // person class score
         let out = decode(&data, anchors, 640, 0.4);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].class, ObjectClass::Person);
