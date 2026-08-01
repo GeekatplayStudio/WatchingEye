@@ -3,8 +3,10 @@
 /**
  * One detection event as a hairline-separated row: status column on the
  * left, claim and evidence chain on the right — the console row pattern.
+ * Selectable for event-replay detail.
  */
 import { Badge, StatusBadge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import type { DetectionEvent } from "@/lib/types";
 import { PersonStanding, Dog, Car, Package, HelpCircle, Cat } from "lucide-react";
 
@@ -23,14 +25,26 @@ function confidenceVariant(c: number): "success" | "warning" | "danger" {
   return "danger";
 }
 
-export function EventCard({ event }: { event: DetectionEvent }) {
+export function EventCard({
+  event,
+  selected = false,
+  onSelect,
+}: {
+  event: DetectionEvent;
+  selected?: boolean;
+  onSelect?: (event: DetectionEvent) => void;
+}) {
   const Icon = CLASS_ICONS[event.class] ?? HelpCircle;
   const refused = event.rejectedReason !== undefined;
-  return (
-    <article className="flex gap-4 px-4 py-3">
+  const interactive = onSelect !== undefined;
+
+  const body = (
+    <>
       <div className="w-28 shrink-0 space-y-1.5">
         {refused ? (
           <StatusBadge variant="danger">refused</StatusBadge>
+        ) : event.filtered ? (
+          <StatusBadge variant="warning">filtered</StatusBadge>
         ) : (
           <StatusBadge variant={confidenceVariant(event.confidence)}>
             {(event.confidence * 100).toFixed(0)}%
@@ -49,6 +63,9 @@ export function EventCard({ event }: { event: DetectionEvent }) {
             {event.kind.replaceAll("_", " ")}
             {event.zone ? ` · ${event.zone}` : ""}
           </span>
+          {event.identity && (
+            <Badge variant="success">{event.identity.name ?? "identity"}</Badge>
+          )}
         </div>
 
         {event.evidence.length > 0 && (
@@ -67,6 +84,24 @@ export function EventCard({ event }: { event: DetectionEvent }) {
           {refused && <> · {event.rejectedReason}</>}
         </p>
       </div>
-    </article>
+    </>
+  );
+
+  if (!interactive) {
+    return <article className="flex gap-4 px-4 py-3">{body}</article>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(event)}
+      aria-pressed={selected}
+      className={cn(
+        "flex w-full gap-4 px-4 py-3 text-left transition-colors",
+        selected ? "bg-muted/60" : "hover:bg-muted/40",
+      )}
+    >
+      {body}
+    </button>
   );
 }

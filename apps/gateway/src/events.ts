@@ -65,6 +65,17 @@ export interface DetectionEvent {
     /** Distinct cameras this identity has been seen on. */
     camerasSeen?: string[];
   };
+  /**
+   * Full model provenance when classification ran. Flattened `model` /
+   * `promptVersion` stay for list views; this block is what the replay UI
+   * reconstructs. Snapshot *bytes* are not retained — only image refs.
+   */
+  provenance?: {
+    model_version: string;
+    prompt_version: string;
+    input_images: string[];
+    timestamp: string;
+  };
   /** Always "engine": events only originate from the real pipeline. */
   source: "engine";
 }

@@ -21,7 +21,7 @@ closing them before more Phase 6 depth.
 | P1 | **1.4** Tracker soak + snapshot fixtures | ~~no 100-frame soak / fixture snapshots~~ ✅ synthetic gray8 sequences + live `Engine::process` soak in CI |
 | P1 | **2.3** Rules → notify webhook | ~~Rule types exist; no HTTP webhook delivery~~ ✅ zone enter + webhook + determinism tests |
 | P1 | **2.2** VLM golden / latency | Golden fixture CI ✅; &lt;300 ms GPU latency gate still open |
-| P1 | **2.4** Event replay UI | Live evidence yes; no past-event pipeline replay |
+| P1 | **2.4** Event replay UI | ~~no past-event pipeline replay~~ ✅ select + path + provenance (no pixel retention) |
 | P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
 | P2 | **2.1c / 6.3** pgvector | Docker image present; extension + vector columns unused |
@@ -136,11 +136,19 @@ closing them before more Phase 6 depth.
   a real class; set `WATCHINGEYE_RULE_CLASS` accordingly. Actuator remains
   servos-only; gateway has no webhook delivery.
 
-### Step 2.4 — Zero-black-box dashboard (partial)
+### Step 2.4 — Zero-black-box dashboard ✅
 - [x] Live evidence chips, refusal reasons, identity verdicts on console
-- [ ] Replay: select a past event, see exact pipeline path taken
-- [ ] Every decision in the DB fully reconstructable in the UI
-
+- [x] Replay: select a past event, see exact pipeline path taken —
+      Live monitor hydrates `GET /api/events/recent`, selectable
+      `EventCard` → `EventDetail` receipt with highlighted DAG stages
+      (`pipelinePathFor`); `GET /api/events/:id` for store lookup
+- [x] Every decision in the DB fully reconstructable in the UI —
+      stored evidence, identity, descriptors, risk, refusal, and full
+      `provenance` (model/prompt/input_images refs/timestamp) round-trip
+      on classify
+- Note: **snapshot image bytes are not retained** — UI reconstructs the
+  stored decision path and provenance refs, not pixel re-infer. True
+  re-classification would be a new decision with new provenance.
 ---
 
 ## Phase 3 — Multi-Camera, Edge Nodes, MCP, Appearance ReID
@@ -265,8 +273,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 4. ~~**2.3** — notify webhook from rules~~ ✅
 5. ~~**1.4** — tracker soak + gray-sequence snapshot fixtures~~ ✅
 6. ~~**2.2** — fixture-image golden decision in CI~~ ✅ (GPU &lt;300 ms latency still open)
-7. **2.4** — event replay UI ← **next**
-8. Then resume Phase 6.2–6.3 depth / pgvector
+7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
+8. Then resume Phase 6.2–6.3 depth / pgvector ← **next**
 9. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
 10. **2.2 latency** — GPU benchmark when hardware is available
 

@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * WebSocket hook: connects to the gateway's /ws stream, keeps the latest
- * events (newest first), and exposes connection state. Reconnects with a
- * fixed 3s backoff.
+ * Live + recent events: hydrates from `GET /api/events/recent` on mount,
+ * then merges WebSocket frames. Newest first, deduped by id, capped at 100.
  */
 import { useEffect, useRef, useState } from "react";
 import type { DetectionEvent, Settings } from "./types";
@@ -17,11 +16,45 @@ interface LiveState {
   connected: boolean;
 }
 
+/** Merge incoming events into the list: newest first, unique by id. */
+export function mergeEvents(
+  incoming: DetectionEvent[],
+  existing: DetectionEvent[],
+): DetectionEvent[] {
+  const byId = new Map<string, DetectionEvent>();
+  for (const e of [...incoming, ...existing]) {
+    if (!byId.has(e.id)) byId.set(e.id, e);
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
+    .slice(0, MAX_EVENTS);
+}
+
 export function useLiveEvents(): LiveState {
   const [events, setEvents] = useState<DetectionEvent[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [connected, setConnected] = useState(false);
   const retryRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function hydrate() {
+      try {
+        const res = await fetch("/api/events/recent?limit=100");
+        if (!res.ok) return;
+        const data = (await res.json()) as { events?: DetectionEvent[] };
+        if (cancelled) return;
+        const recent = data.events ?? [];
+        setEvents((prev) => mergeEvents(recent, prev));
+      } catch {
+        // Gateway may be down at mount; WS reconnect will carry live traffic.
+      }
+    }
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let socket: WebSocket | undefined;
@@ -36,7 +69,7 @@ export function useLiveEvents(): LiveState {
             | { type: "event"; event: DetectionEvent }
             | { type: "settings"; settings: Settings };
           if (data.type === "event") {
-            setEvents((prev) => [data.event, ...prev].slice(0, MAX_EVENTS));
+            setEvents((prev) => mergeEvents([data.event], prev));
           } else if (data.type === "settings") {
             setSettings(data.settings);
           }

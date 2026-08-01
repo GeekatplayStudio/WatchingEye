@@ -71,7 +71,21 @@ describe("gateway server", () => {
     expect(body.event.class).toBe("person");
     expect(body.event.model).toBe("qwen2.5vl:7b");
     expect(body.event.promptVersion).toBe("classify-v1");
+    expect(body.event.provenance).toMatchObject({
+      model_version: "qwen2.5vl:7b",
+      prompt_version: "classify-v1",
+      input_images: ["frame-47"],
+    });
     expect(body.event.source).toBe("engine");
+
+    const byId = await app.inject({ method: "GET", url: `/api/events/${body.event.id}` });
+    expect(byId.statusCode).toBe(200);
+    expect(byId.json().event.id).toBe(body.event.id);
+    expect(byId.json().event.provenance.prompt_version).toBe("classify-v1");
+
+    const missing = await app.inject({ method: "GET", url: "/api/events/does-not-exist" });
+    expect(missing.statusCode).toBe(404);
+
     await app.close();
   });
 

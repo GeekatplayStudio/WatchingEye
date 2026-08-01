@@ -12,6 +12,8 @@ export interface EventStore {
   insertEvent(event: DetectionEvent): Promise<void>;
   /** Most recent events, newest first. */
   recentEvents(limit: number): Promise<DetectionEvent[]>;
+  /** Look up one event by id, or null when unknown. */
+  getEvent(id: string): Promise<DetectionEvent | null>;
   /** Close connections. */
   close(): Promise<void>;
 }
@@ -29,6 +31,14 @@ export class MemoryEventStore implements EventStore {
 
   async recentEvents(limit: number): Promise<DetectionEvent[]> {
     return [...this.events].reverse().slice(0, limit);
+  }
+
+  async getEvent(id: string): Promise<DetectionEvent | null> {
+    for (let i = this.events.length - 1; i >= 0; i -= 1) {
+      const event = this.events[i];
+      if (event !== undefined && event.id === id) return event;
+    }
+    return null;
   }
 
   async close(): Promise<void> {
@@ -68,6 +78,12 @@ export class PgEventStore implements EventStore {
       [limit],
     );
     return res.rows.map((r: { payload: DetectionEvent }) => r.payload);
+  }
+
+  async getEvent(id: string): Promise<DetectionEvent | null> {
+    const res = await this.pool.query("SELECT payload FROM events WHERE id = $1 LIMIT 1", [id]);
+    const row = res.rows[0] as { payload: DetectionEvent } | undefined;
+    return row?.payload ?? null;
   }
 
   async close(): Promise<void> {

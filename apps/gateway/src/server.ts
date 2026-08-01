@@ -6,6 +6,7 @@
  * - `GET  /health` — liveness probe
  * - `GET  /api/cameras` — cameras that have reported frames
  * - `GET  /api/events/recent?limit=50` — recent events, newest first
+ * - `GET  /api/events/:id` — one stored event for replay UI
  * - `GET  /api/settings` / `PUT /api/settings` — tuning knobs
  * - `POST /api/classify` — classify a gated event (proxied to orchestrator)
  * - `GET  /ws` — live event stream
@@ -144,6 +145,15 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     return { events: await store.recentEvents(n) };
   });
 
+  app.get("/api/events/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const event = await store.getEvent(id);
+    if (event === null) {
+      return reply.status(404).send({ error: "event not found" });
+    }
+    return { event };
+  });
+
   app.get("/api/settings", async () => settings);
 
   app.put("/api/settings", async (req, reply) => {
@@ -259,6 +269,12 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     if (decision !== null && decision !== undefined) {
       event.promptVersion = decision.provenance.prompt_version;
       event.risk = decision.risk;
+      event.provenance = {
+        model_version: decision.provenance.model_version,
+        prompt_version: decision.provenance.prompt_version,
+        input_images: [...decision.provenance.input_images],
+        timestamp: decision.provenance.timestamp,
+      };
     }
     if (result.rejectionReason !== undefined && result.rejectionReason !== "") {
       event.rejectedReason = result.rejectionReason;
