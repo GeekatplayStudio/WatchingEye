@@ -1,17 +1,24 @@
-//! The live pipeline: frame → validate → motion → blobs → track → gate.
+//! The live pipeline: frame → validate → motion → blobs → track → gate → zones → rules.
 //!
 //! Every stage records what it concluded and why, so [`FrameOutcome`] alone
 //! is enough to explain any result the dashboard renders. Nothing here
 //! consults a model; classification happens later, only for gated events.
+//! Rule actions are returned as [`PendingNotify`] — HTTP delivery lives in
+//! [`crate::notify`], never in this hot path.
 
 use crate::api::FrameRequest;
 use crate::config::EngineConfig;
 use crate::pinned::{self, PinnedLock, PinnedStatus};
+use crate::rule_set;
+use crate::zone_rules::{self, PendingNotify};
+use crate::zones::ZoneMonitor;
 use actuator::{Head, ServoCommand, Target};
 use camera::Frame;
 use chrono::Utc;
+use events::Event;
 use motion::blobs::BlobScratch;
 use motion::{blobs, BackgroundModel};
+use rules::Rule;
 use schemas::detection::BoundingBox;
 use serde::Serialize;
 use spatial::motion::{describe, MotionVector};
@@ -74,6 +81,11 @@ pub struct FrameOutcome {
     pub pinned_status: PinnedStatus,
     /// The track the assignment is following, when it has one.
     pub pinned_track_id: Option<Uuid>,
+    /// Zone-enter events emitted on this frame (at most once per stay).
+    pub zone_events: Vec<Event>,
+    /// Rule actions awaiting async webhook delivery (not executed here).
+    #[serde(skip)]
+    pub pending_notifies: Vec<PendingNotify>,
 }
 
 /// Per-camera pipeline state.
@@ -88,6 +100,8 @@ struct CameraState {
     /// Active Point Cross assignment, held across frames so the aim follows
     /// the subject rather than the coordinate it was assigned at.
     pinned: Option<PinnedLock>,
+    /// Named zones and which tracks are currently inside them.
+    zones: ZoneMonitor,
 }
 
 /// Aim at a bare screen point, used while an assignment has nothing to
@@ -212,6 +226,8 @@ fn rejected(frame_no: u64, servo: ServoCommand, reason: String, stage: &str) -> 
         pinned_target: None,
         pinned_status: PinnedStatus::Idle,
         pinned_track_id: None,
+        zone_events: Vec::new(),
+        pending_notifies: Vec::new(),
     }
 }
 
@@ -219,6 +235,7 @@ fn rejected(frame_no: u64, servo: ServoCommand, reason: String, stage: &str) -> 
 pub struct Engine {
     cameras: HashMap<String, CameraState>,
     config: EngineConfig,
+    rules: Vec<Rule>,
 }
 
 impl Default for Engine {
@@ -228,12 +245,14 @@ impl Default for Engine {
 }
 
 impl Engine {
-    /// Create an engine with no cameras attached and default thresholds.
+    /// Create an engine with no cameras attached, default thresholds, and
+    /// the env/hard-coded rule set.
     #[must_use]
     pub fn new() -> Self {
         Self {
             cameras: HashMap::new(),
             config: EngineConfig::default(),
+            rules: rule_set::default_rules(),
         }
     }
 
@@ -241,6 +260,12 @@ impl Engine {
     #[must_use]
     pub fn config(&self) -> EngineConfig {
         self.config
+    }
+
+    /// Replace the rule set (tests and live reconfiguration).
+    #[cfg(test)]
+    pub fn set_rules(&mut self, rules: Vec<Rule>) {
+        self.rules = rules;
     }
 
     /// Apply new thresholds, clamping them into safe ranges.
@@ -254,6 +279,7 @@ impl Engine {
             for state in self.cameras.values_mut() {
                 state.background = BackgroundModel::new(next.background_alpha, next.sensitivity);
                 state.tracks.clear();
+                state.zones = ZoneMonitor::default_garage();
             }
         }
         self.config = next;
@@ -271,9 +297,11 @@ impl Engine {
     pub fn process(&mut self, req: FrameRequest) -> FrameOutcome {
         let expected = (req.width as usize) * (req.height as usize);
         let config = self.config;
+        let rules = self.rules.clone();
         // Frame interval reported by the client, clamped to something sane so
         // a stalled tab cannot command a huge servo step on resume.
         let dt = req.dt_secs.unwrap_or(0.1).clamp(0.005, 0.5);
+        let camera_id = req.camera_id.clone();
         let state = self
             .cameras
             .entry(req.camera_id)
@@ -284,6 +312,7 @@ impl Engine {
                 head: Head::default(),
                 scratch: BlobScratch::default(),
                 pinned: None,
+                zones: ZoneMonitor::default_garage(),
             });
         state.frame += 1;
         let frame_no = state.frame;
@@ -347,19 +376,13 @@ impl Engine {
             config.gate_frames
         ));
 
+        let (zone_events, pending_notifies) =
+            evaluate_zones(state, &camera_id, &rules, req.width, req.height, &mut trace);
+
         let aim = resolve_aim(state, req.pinned_target, req.width, req.height, &mut trace);
         let target = aim.target;
         let servo = state.head.update(target, dt);
-        trace.push(format!(
-            "aim: {} -> pan {:.0}° tilt {:.0}° ({})",
-            target.map_or_else(
-                || "no target".to_string(),
-                |t| format!("x {:+.2} y {:+.2}", t.x, t.y)
-            ),
-            servo.pan_deg,
-            servo.tilt_deg,
-            servo.reason
-        ));
+        push_aim_trace(&mut trace, target, &servo);
 
         FrameOutcome {
             frame: frame_no,
@@ -375,8 +398,45 @@ impl Engine {
             pinned_target: req.pinned_target,
             pinned_status: aim.pinned_status,
             pinned_track_id: aim.pinned_track_id,
+            zone_events,
+            pending_notifies,
         }
     }
+}
+
+/// Zone membership + rule evaluation for the current tracks.
+fn evaluate_zones(
+    state: &mut CameraState,
+    camera_id: &str,
+    rules: &[Rule],
+    width: u32,
+    height: u32,
+    trace: &mut Vec<String>,
+) -> (Vec<Event>, Vec<PendingNotify>) {
+    let track_boxes: Vec<(Uuid, BoundingBox)> =
+        state.tracks.iter().map(|t| (t.id, t.bbox)).collect();
+    let enters = state.zones.update(&track_boxes, width, height);
+    let (zone_events, pending_notifies) =
+        zone_rules::process_zone_enters(camera_id, &enters, rules);
+    trace.push(format!(
+        "zones: {} enter(s), {} rule action(s)",
+        zone_events.len(),
+        pending_notifies.len()
+    ));
+    (zone_events, pending_notifies)
+}
+
+fn push_aim_trace(trace: &mut Vec<String>, target: Option<Target>, servo: &ServoCommand) {
+    trace.push(format!(
+        "aim: {} -> pan {:.0}° tilt {:.0}° ({})",
+        target.map_or_else(
+            || "no target".to_string(),
+            |t| format!("x {:+.2} y {:+.2}", t.x, t.y)
+        ),
+        servo.pan_deg,
+        servo.tilt_deg,
+        servo.reason
+    ));
 }
 
 /// Associate regions to tracks, age unmatched tracks, and open gates.
@@ -722,5 +782,38 @@ mod tests {
         let out = e.process(req_pinned);
         assert_eq!(out.pinned_target, Some([0.75, 0.25]));
         assert!(out.trace.iter().any(|t| t.contains("point_cross_assign")));
+    }
+
+    #[test]
+    fn track_entering_right_half_emits_zone_enter_once() {
+        use rules::{Action, Condition, Rule};
+        use schemas::ObjectClass;
+
+        let mut e = Engine::new();
+        e.set_rules(vec![Rule {
+            name: "test-garage".into(),
+            conditions: vec![
+                Condition::IsClass(ObjectClass::Unknown),
+                Condition::InZone("garage".into()),
+            ],
+            action: Action::Notify {
+                channel: "default".into(),
+            },
+        }]);
+        e.process(req(vec![10; 400]));
+        // Square on the right half (x=12 on 20-wide → centroid ~15 → norm 0.75).
+        let mut enters = 0;
+        let mut notifies = 0;
+        for _ in 0..6 {
+            let out = e.process(req(frame_with_square(12, 5, 6)));
+            enters += out.zone_events.len();
+            notifies += out.pending_notifies.len();
+        }
+        assert_eq!(enters, 1, "EnteredZone must fire once per stay");
+        assert_eq!(notifies, 1, "matching rule must yield one Notify");
+        assert!(e
+            .process(req(frame_with_square(12, 5, 6)))
+            .zone_events
+            .is_empty());
     }
 }

@@ -13,7 +13,7 @@
 //! already handles it correctly, and it is already a dependency of this
 //! project's toolchain.
 
-use crate::api::{FrameRequest, SharedEngine};
+use crate::api::{process_frame, FrameRequest, FrameState};
 use crate::cameras_api::{base64, fail};
 use crate::engine::FrameOutcome;
 use axum::extract::{Path, State};
@@ -68,7 +68,7 @@ struct LatestFrame {
 /// Shared state for the RTSP router.
 #[derive(Clone)]
 pub struct RtspState {
-    engine: SharedEngine,
+    frames: FrameState,
     tasks: Arc<Mutex<HashMap<String, CameraTask>>>,
     latest: Arc<Mutex<HashMap<String, LatestFrame>>>,
     /// Base URL of the gateway, for posting classify requests on a trigger.
@@ -77,9 +77,9 @@ pub struct RtspState {
 
 /// Build the router. `gateway_url` is where triggered objects get `POST`ed
 /// for classification — the same endpoint the browser's capture loop calls.
-pub fn router(engine: SharedEngine, gateway_url: String) -> Router {
+pub fn router(frames: FrameState, gateway_url: String) -> Router {
     let state = RtspState {
-        engine,
+        frames,
         tasks: Arc::new(Mutex::new(HashMap::new())),
         latest: Arc::new(Mutex::new(HashMap::new())),
         gateway_url,
@@ -352,10 +352,7 @@ async fn capture_loop(state: RtspState, camera_id: String, url: String) {
             pinned_target: None,
         };
 
-        let outcome = {
-            let mut guard = lock(&state.engine);
-            guard.process(req)
-        };
+        let outcome = process_frame(&state.frames, req);
 
         for object_id in &outcome.triggered {
             if !classified.insert(*object_id) {
@@ -464,6 +461,20 @@ async fn snapshot_and_classify(
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::notify::Notifier;
+    use std::collections::HashMap as Map;
+
+    fn test_state() -> RtspState {
+        RtspState {
+            frames: FrameState {
+                engine: Arc::new(Mutex::new(crate::engine::Engine::new())),
+                notifier: Arc::new(Notifier::from_channels(Map::new()).unwrap()),
+            },
+            tasks: Arc::new(Mutex::new(HashMap::new())),
+            latest: Arc::new(Mutex::new(HashMap::new())),
+            gateway_url: "http://localhost:8080".into(),
+        }
+    }
 
     #[test]
     fn strips_credentials_from_an_rtsp_url() {
@@ -518,14 +529,8 @@ mod tests {
 
     #[tokio::test]
     async fn disconnecting_an_unknown_camera_is_reported_not_silently_accepted() {
-        let state = RtspState {
-            engine: Arc::new(Mutex::new(crate::engine::Engine::new())),
-            tasks: Arc::new(Mutex::new(HashMap::new())),
-            latest: Arc::new(Mutex::new(HashMap::new())),
-            gateway_url: "http://localhost:8080".into(),
-        };
         let res = disconnect(
-            State(state),
+            State(test_state()),
             Json(DisconnectRequest {
                 camera_id: "nope".into(),
             }),
@@ -536,26 +541,14 @@ mod tests {
 
     #[tokio::test]
     async fn latest_for_an_unknown_camera_is_not_found() {
-        let state = RtspState {
-            engine: Arc::new(Mutex::new(crate::engine::Engine::new())),
-            tasks: Arc::new(Mutex::new(HashMap::new())),
-            latest: Arc::new(Mutex::new(HashMap::new())),
-            gateway_url: "http://localhost:8080".into(),
-        };
-        let res = latest(State(state), Path("nope".into())).await;
+        let res = latest(State(test_state()), Path("nope".into())).await;
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn connecting_with_an_empty_id_is_refused() {
-        let state = RtspState {
-            engine: Arc::new(Mutex::new(crate::engine::Engine::new())),
-            tasks: Arc::new(Mutex::new(HashMap::new())),
-            latest: Arc::new(Mutex::new(HashMap::new())),
-            gateway_url: "http://localhost:8080".into(),
-        };
         let res = connect(
-            State(state),
+            State(test_state()),
             Json(ConnectRequest {
                 camera_id: "  ".into(),
                 url: "rtsp://x/y".into(),

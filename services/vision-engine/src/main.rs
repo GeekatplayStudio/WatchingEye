@@ -18,12 +18,16 @@ mod file_pump;
 mod identify;
 mod identity_store;
 mod netscan;
+mod notify;
 mod onvif_client;
 mod pinned;
 mod pipeline;
 mod reolink_client;
 mod rtsp;
+mod rule_set;
 mod scan_jobs;
+mod zone_rules;
+mod zones;
 
 use identify::IdentityState;
 use identity_store::IdentityStore;
@@ -110,6 +114,23 @@ async fn main() {
     }
 
     let state = Arc::new(Mutex::new(engine::Engine::new()));
+    let notifier = Arc::new(match notify::Notifier::from_env() {
+        Ok(n) => n,
+        Err(err) => {
+            warn!(%err, "notify config invalid; starting with empty channel map");
+            match notify::Notifier::from_channels(std::collections::HashMap::new()) {
+                Ok(n) => n,
+                Err(build_err) => {
+                    error!(%build_err, "failed to build empty notifier");
+                    std::process::exit(1);
+                }
+            }
+        }
+    });
+    let frames = api::FrameState {
+        engine: state,
+        notifier,
+    };
 
     let identity_db_path = identity_store::IdentityStore::default_path();
     let identity_state = match load_identity_state(&identity_db_path) {
@@ -129,10 +150,10 @@ async fn main() {
             camera_id = %file_args.camera_id,
             "starting file camera pump"
         );
-        let _pump = file_pump::spawn(state.clone(), file_args);
+        let _pump = file_pump::spawn(frames.clone(), file_args);
     }
 
-    let app = api::router(state, identity_state, gateway_url);
+    let app = api::router(frames, identity_state, gateway_url);
 
     info!(port = bound.port, "vision-engine listening");
     if let Err(err) = axum::serve(bound.listener, app).await {

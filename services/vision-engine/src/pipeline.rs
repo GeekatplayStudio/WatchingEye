@@ -1,7 +1,9 @@
 //! End-to-end pipeline wiring with stub camera/detector backends.
 //!
 //! The stubs are deterministic so the integration test proves the full
-//! chain: detect â†’ filter â†’ track â†’ gate â†’ guardrails â†’ rules â†’ actions.
+//! chain: detect → filter → track → gate → guardrails → rules → actions.
+//! Live webhook delivery is covered by [`crate::notify`] tests; this demo
+//! only proves the pure evaluate path.
 
 use chrono::Utc;
 use detector::filter_by_confidence;
@@ -65,6 +67,20 @@ fn stub_agent_response(object_id: uuid::Uuid) -> String {
     .to_string()
 }
 
+/// Garage / person / notify rule used by the stub demo.
+fn demo_rules() -> Vec<Rule> {
+    vec![Rule {
+        name: "person-in-garage".into(),
+        conditions: vec![
+            Condition::IsClass(ObjectClass::Person),
+            Condition::InZone("garage".into()),
+        ],
+        action: Action::Notify {
+            channel: "default".into(),
+        },
+    }]
+}
+
 /// Run the full pipeline once with stub backends.
 #[must_use]
 pub fn run_demo() -> RunReport {
@@ -96,17 +112,7 @@ pub fn run_demo() -> RunReport {
                 },
                 "stub-cam",
             );
-            let rules = vec![Rule {
-                name: "person-in-garage".into(),
-                conditions: vec![
-                    Condition::IsClass(ObjectClass::Person),
-                    Condition::InZone("garage".into()),
-                ],
-                action: Action::Notify {
-                    channel: "default".into(),
-                },
-            }];
-            (true, validated, rules::evaluate(&rules, &event))
+            (true, validated, rules::evaluate(&demo_rules(), &event))
         }
     };
 
@@ -135,5 +141,12 @@ mod tests {
                 channel: "default".into()
             }]
         );
+    }
+
+    #[test]
+    fn demo_evaluate_is_stable_across_calls() {
+        let a = run_demo().actions;
+        let b = run_demo().actions;
+        assert_eq!(a, b);
     }
 }

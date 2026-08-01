@@ -5,13 +5,12 @@
 //! - **Container video** (`.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`): ffmpeg
 //!   subprocess decoding to the same 96×72 gray8 rawvideo grid RTSP uses.
 
-use crate::api::{FrameRequest, SharedEngine};
+use crate::api::{process_frame, FrameRequest, FrameState};
 use crate::cli::FileCameraArgs;
 use camera::file::{FileCamera, GRID_HEIGHT, GRID_WIDTH};
 use camera::{CameraError, CameraSource};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Mutex;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
@@ -38,27 +37,20 @@ pub fn is_container_video(path: &Path) -> bool {
 ///
 /// Returns the join handle so tests can await completion. The HTTP server
 /// keeps running after the file ends (same as an RTSP disconnect).
-pub fn spawn(engine: SharedEngine, args: FileCameraArgs) -> JoinHandle<u64> {
+pub fn spawn(frames: FrameState, args: FileCameraArgs) -> JoinHandle<u64> {
     tokio::spawn(async move {
         let camera_id = args.camera_id.clone();
         let path = args.input.clone();
-        let frames = if is_container_video(&path) {
-            pump_ffmpeg(engine, path, camera_id).await
+        let frames_count = if is_container_video(&path) {
+            pump_ffmpeg(frames, path, camera_id).await
         } else {
-            pump_file_camera(engine, path, camera_id).await
+            pump_file_camera(frames, path, camera_id).await
         };
-        frames
+        frames_count
     })
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    match m.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
-fn ingest(engine: &SharedEngine, camera_id: &str, samples: Vec<u8>, dt_secs: f32) {
+fn ingest(frames: &FrameState, camera_id: &str, samples: Vec<u8>, dt_secs: f32) {
     let req = FrameRequest {
         camera_id: camera_id.to_owned(),
         width: GRID_WIDTH,
@@ -67,10 +59,10 @@ fn ingest(engine: &SharedEngine, camera_id: &str, samples: Vec<u8>, dt_secs: f32
         dt_secs: Some(dt_secs),
         pinned_target: None,
     };
-    let _ = lock(engine).process(req);
+    let _ = process_frame(frames, req);
 }
 
-async fn pump_file_camera(engine: SharedEngine, path: PathBuf, camera_id: String) -> u64 {
+async fn pump_file_camera(frames: FrameState, path: PathBuf, camera_id: String) -> u64 {
     let open_result = tokio::task::spawn_blocking({
         let path = path.clone();
         let camera_id = camera_id.clone();
@@ -97,7 +89,7 @@ async fn pump_file_camera(engine: SharedEngine, path: PathBuf, camera_id: String
     );
 
     let dt = 1.0 / f32::from(u16::try_from(CAPTURE_FPS).unwrap_or(8));
-    let mut frames: u64 = 0;
+    let mut frames_read: u64 = 0;
 
     loop {
         let result = tokio::task::spawn_blocking(move || {
@@ -117,26 +109,26 @@ async fn pump_file_camera(engine: SharedEngine, path: PathBuf, camera_id: String
 
         match frame {
             Ok(frame) => {
-                ingest(&engine, &camera_id, frame.data, dt);
-                frames = frames.saturating_add(1);
+                ingest(&frames, &camera_id, frame.data, dt);
+                frames_read = frames_read.saturating_add(1);
                 // Yield so the HTTP server stays responsive during a long file.
                 tokio::task::yield_now().await;
             }
             Err(CameraError::Disconnected(_)) => {
-                info!(camera_id = %camera_id, frames, "file camera exhausted");
+                info!(camera_id = %camera_id, frames = frames_read, "file camera exhausted");
                 break;
             }
             Err(err) => {
-                warn!(camera_id = %camera_id, %err, frames, "file camera stopped on bad frame");
+                warn!(camera_id = %camera_id, %err, frames = frames_read, "file camera stopped on bad frame");
                 break;
             }
         }
     }
 
-    frames
+    frames_read
 }
 
-async fn pump_ffmpeg(engine: SharedEngine, path: PathBuf, camera_id: String) -> u64 {
+async fn pump_ffmpeg(frames: FrameState, path: PathBuf, camera_id: String) -> u64 {
     let path_str = path.to_string_lossy().into_owned();
     let mut child = match Command::new("ffmpeg")
         .args([
@@ -183,20 +175,20 @@ async fn pump_ffmpeg(engine: SharedEngine, path: PathBuf, camera_id: String) -> 
     let frame_bytes = (GRID_WIDTH * GRID_HEIGHT) as usize;
     let mut buf = vec![0u8; frame_bytes];
     let dt = 1.0 / f32::from(u16::try_from(CAPTURE_FPS).unwrap_or(8));
-    let mut frames: u64 = 0;
+    let mut frames_read: u64 = 0;
 
     loop {
         if let Err(err) = stdout.read_exact(&mut buf).await {
-            info!(camera_id = %camera_id, %err, frames, "ffmpeg file stream ended");
+            info!(camera_id = %camera_id, %err, frames = frames_read, "ffmpeg file stream ended");
             break;
         }
-        frames = frames.saturating_add(1);
-        ingest(&engine, &camera_id, buf.clone(), dt);
+        frames_read = frames_read.saturating_add(1);
+        ingest(&frames, &camera_id, buf.clone(), dt);
     }
 
     let _ = child.kill().await;
     tokio::time::sleep(Duration::from_millis(10)).await;
-    frames
+    frames_read
 }
 
 /// Drain a [`FileCamera`] synchronously and count frames — used by the golden
@@ -222,7 +214,6 @@ mod tests {
     use super::*;
     use std::fs::{self, File};
     use std::io::Write;
-    use std::sync::Arc;
 
     #[test]
     fn container_extensions_are_detected() {
@@ -252,14 +243,23 @@ mod tests {
         assert_eq!(count_frames(cam).unwrap(), n_frames);
 
         // Also prove the engine accepts every frame from the same fixture.
-        let engine = Arc::new(Mutex::new(crate::engine::Engine::new()));
+        // Call Engine::process directly (no Tokio runtime / webhook flush).
+        let mut engine = crate::engine::Engine::new();
         let cam = FileCamera::open_grid(&path, "golden-pump").unwrap();
         let mut ingested = 0u64;
         let mut cam = cam;
         loop {
             match cam.next_frame() {
                 Ok(frame) => {
-                    ingest(&engine, "golden-pump", frame.data, 0.125);
+                    let req = FrameRequest {
+                        camera_id: "golden-pump".into(),
+                        width: GRID_WIDTH,
+                        height: GRID_HEIGHT,
+                        samples: frame.data,
+                        dt_secs: Some(0.125),
+                        pinned_target: None,
+                    };
+                    let _ = engine.process(req);
                     ingested += 1;
                 }
                 Err(CameraError::Disconnected(_)) => break,

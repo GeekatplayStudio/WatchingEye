@@ -19,7 +19,7 @@ closing them before more Phase 6 depth.
 | P0 | **1.5** SQLite object DB | ~~No sqlite/sqlx anywhere~~ ✅ identity persistence shipped; events remain memory/Postgres JSONB only |
 | P0 | **1.1** File & USB camera backends | File `CameraSource` + CLI pump + golden tests ✅; USB still deferred |
 | P1 | **1.4** Tracker soak + snapshot fixtures | IoU works; no 100-frame soak / fixture-video snapshot tests in CI |
-| P1 | **2.3** Rules → notify webhook | Rule types exist; no HTTP webhook delivery |
+| P1 | **2.3** Rules → notify webhook | ~~Rule types exist; no HTTP webhook delivery~~ ✅ zone enter + webhook + determinism tests |
 | P1 | **2.4** Event replay UI | Live evidence yes; no past-event pipeline replay |
 | P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
@@ -116,10 +116,17 @@ closing them before more Phase 6 depth.
 - [ ] End-to-end latency < 300 ms gate-open → decision (GPU benchmark)
 - [ ] Fixture-image golden decision test in CI
 
-### Step 2.3 — Rule engine expansion + actions ⛔ skipped
-- [ ] Zones, time windows, notify webhook end-to-end
-- [ ] Rule evaluation property test for determinism
-- Note: `crates/rules` has types + stub pipeline demo; no live webhook.
+### Step 2.3 — Rule engine expansion + actions ✅
+- [x] Zones, time windows, notify webhook end-to-end —
+      `ZoneMonitor` (right-half `"garage"`) emits `EnteredZone` once per stay;
+      `rules::evaluate` with env/hard-coded zone+class (+ optional
+      `WATCHINGEYE_RULE_HOURS`); `Notifier` POSTs JSON from vision-engine
+      (`WATCHINGEYE_NOTIFY_WEBHOOK_URL` / `WATCHINGEYE_NOTIFY_CHANNELS`)
+- [x] Rule evaluation property test for determinism
+      (`evaluate_is_deterministic_across_repeats` in `crates/rules`)
+- Note: live motion tracks use `ObjectClass::Unknown` until classify attaches
+  a real class; set `WATCHINGEYE_RULE_CLASS` accordingly. Actuator remains
+  servos-only; gateway has no webhook delivery.
 
 ### Step 2.4 — Zero-black-box dashboard (partial)
 - [x] Live evidence chips, refusal reasons, identity verdicts on console
@@ -247,7 +254,7 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 1. ~~**6.1 remaining** — wire `activeIntent` into classify / dataset / ANPR~~ ✅
 2. ~~**1.5** — SQLite identity persistence~~ ✅ (event persistence still open)
 3. ~~**1.1** — file camera backend + golden fixture test~~ ✅ (USB still open)
-4. **2.3** — notify webhook from rules
+4. ~~**2.3** — notify webhook from rules~~ ✅
 5. **1.4 / 2.2** — soak + golden VLM CI gates
 6. Then resume Phase 6.2–6.3 depth
 7. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP

@@ -162,4 +162,68 @@ mod tests {
             .push(Condition::HourBetween { start: 0, end: 5 });
         assert_eq!(evaluate(&[rule], &event).len(), 1);
     }
+
+    /// Same `(rules, event)` must yield the same `Vec<Action>` every time.
+    /// Event id is irrelevant to matching; only class / kind / hour matter.
+    #[test]
+    fn evaluate_is_deterministic_across_repeats() {
+        let mut event = garage_event(ObjectClass::Person);
+        event.timestamp = event
+            .timestamp
+            .with_hour(2)
+            .and_then(|t| t.with_minute(0))
+            .unwrap();
+        let mut rule = person_garage_rule();
+        rule.conditions
+            .push(Condition::HourBetween { start: 0, end: 5 });
+        let rules = [rule];
+
+        let expected = evaluate(&rules, &event);
+        assert_eq!(
+            expected,
+            vec![Action::Notify {
+                channel: "default".into()
+            }]
+        );
+
+        for i in 0..64 {
+            let mut again = event.clone();
+            // Shuffle fields that must not affect matching.
+            again.id = Uuid::new_v4();
+            again.object_id = Uuid::new_v4();
+            again.camera_id = format!("cam-{i}");
+            assert_eq!(evaluate(&rules, &again), expected, "iteration {i} diverged");
+        }
+    }
+
+    #[test]
+    fn evaluate_order_follows_rule_order() {
+        let event = garage_event(ObjectClass::Person);
+        let rules = [
+            Rule {
+                name: "first".into(),
+                conditions: vec![Condition::IsClass(ObjectClass::Person)],
+                action: Action::LogOnly,
+            },
+            Rule {
+                name: "second".into(),
+                conditions: vec![Condition::InZone("garage".into())],
+                action: Action::Notify {
+                    channel: "ops".into(),
+                },
+            },
+        ];
+        let a = evaluate(&rules, &event);
+        let b = evaluate(&rules, &event);
+        assert_eq!(a, b);
+        assert_eq!(
+            a,
+            vec![
+                Action::LogOnly,
+                Action::Notify {
+                    channel: "ops".into()
+                }
+            ]
+        );
+    }
 }
