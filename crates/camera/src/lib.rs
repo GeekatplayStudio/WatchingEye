@@ -5,8 +5,10 @@
 //! this trait, so backends are swappable and testable in isolation.
 
 pub mod discovery;
+pub mod file;
 pub mod onvif;
 pub mod reolink;
+pub mod validate;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

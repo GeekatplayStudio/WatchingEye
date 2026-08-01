@@ -17,7 +17,7 @@ closing them before more Phase 6 depth.
 | Priority | Step | Gap |
 |----------|------|-----|
 | P0 | **1.5** SQLite object DB | ~~No sqlite/sqlx anywhere~~ ✅ identity persistence shipped; events remain memory/Postgres JSONB only |
-| P0 | **1.1** File & USB camera backends | No Rust file/USB `CameraSource`; live path is browser webcam / RTSP |
+| P0 | **1.1** File & USB camera backends | File `CameraSource` + CLI pump + golden tests ✅; USB still deferred |
 | P1 | **1.4** Tracker soak + snapshot fixtures | IoU works; no 100-frame soak / fixture-video snapshot tests in CI |
 | P1 | **2.3** Rules → notify webhook | Rule types exist; no HTTP webhook delivery |
 | P1 | **2.4** Event replay UI | Live evidence yes; no past-event pipeline replay |
@@ -47,12 +47,17 @@ closing them before more Phase 6 depth.
 
 ## Phase 1 — Single-Camera Edge Detection
 
-### Step 1.1 — File & USB camera backends ⛔ skipped
-- [ ] `vision-engine --camera file --input sample.mp4` streams frames
-- [ ] Golden-file integration test: fixed video in, fixed frame count out
-- [ ] Frame validator rejects corrupt/truncated frames with typed errors
-- Note: browser webcam → engine sample grid works; RTSP ingest exists (3.3).
-  Rust file/USB backends and golden tests do **not**.
+### Step 1.1 — File & USB camera backends (partial)
+- [x] `vision-engine --camera file --input <path>` streams frames
+      (raw gray / frame directory via `camera::file::FileCamera`; `.mp4`
+      via ffmpeg → 96×72 gray8, same grid as RTSP)
+- [x] Golden-file integration test: fixed sequence in, fixed frame count out
+      (`FileCamera` concat/dir tests + `file_pump` engine ingest count)
+- [x] Frame validator rejects corrupt/truncated frames with typed
+      `CameraError::BadFrame` (`camera::validate::validate_frame`)
+- [ ] USB / V4L2 `CameraSource` (deferred — browser webcam + RTSP cover
+      live capture today)
+- Note: Step header stays partial until USB lands; file path is done.
 
 ### Step 1.2 — Motion detection (partial)
 - [x] `crates/motion`: background model + blobs, wired into `vision-engine`
@@ -241,10 +246,11 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 
 1. ~~**6.1 remaining** — wire `activeIntent` into classify / dataset / ANPR~~ ✅
 2. ~~**1.5** — SQLite identity persistence~~ ✅ (event persistence still open)
-3. **1.1** — file camera backend + golden fixture test ← **next**
+3. ~~**1.1** — file camera backend + golden fixture test~~ ✅ (USB still open)
 4. **2.3** — notify webhook from rules
 5. **1.4 / 2.2** — soak + golden VLM CI gates
 6. Then resume Phase 6.2–6.3 depth
+7. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
 
 ---
 

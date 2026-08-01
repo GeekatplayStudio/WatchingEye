@@ -11,8 +11,10 @@
 mod api;
 mod bind;
 mod cameras_api;
+mod cli;
 mod config;
 mod engine;
+mod file_pump;
 mod identify;
 mod identity_store;
 mod netscan;
@@ -67,6 +69,8 @@ fn load_identity_state(db_path: &Path) -> Result<IdentityState, identity_store::
 async fn main() {
     tracing_subscriber::fmt().init();
 
+    let cli = cli::parse_args(std::env::args());
+
     let demo = pipeline::run_demo();
     info!(?demo, "self-check: stub pipeline");
 
@@ -118,6 +122,16 @@ async fn main() {
 
     let gateway_url =
         std::env::var("GATEWAY_URL").unwrap_or_else(|_| "http://localhost:8080".to_owned());
+
+    if let Some(file_args) = cli.file_camera.clone() {
+        info!(
+            path = %file_args.input.display(),
+            camera_id = %file_args.camera_id,
+            "starting file camera pump"
+        );
+        let _pump = file_pump::spawn(state.clone(), file_args);
+    }
+
     let app = api::router(state, identity_state, gateway_url);
 
     info!(port = bound.port, "vision-engine listening");
