@@ -241,9 +241,12 @@ describe("activeIntent pipeline gating", () => {
     globalDatasetStore.clear();
     const unit = new Array<number>(384).fill(0);
     unit[0] = 1;
+    const textUnit = new Array<number>(768).fill(0);
+    textUnit[3] = 1;
     const app = await buildServer({
       classifier: async () => decisionResult("person"),
       embedder: async () => ({ values: unit, model: "dinov2-vits14-onnx" }),
+      textEmbedder: async () => ({ values: textUnit, model: "stub-text-1" }),
     });
     await app.inject({
       method: "POST",
@@ -255,6 +258,8 @@ describe("activeIntent pipeline gating", () => {
     expect(search.json().records[0].embedModel).toBe("dinov2-vits14-onnx");
     expect(search.json().records[0].embedding).toHaveLength(384);
     expect(search.json().records[0].provenance.embed_model).toBe("dinov2-vits14-onnx");
+    expect(search.json().records[0].textEmbedModel).toBe("stub-text-1");
+    expect(search.json().records[0].textEmbedding).toHaveLength(768);
 
     const stats = await app.inject({ method: "GET", url: "/api/dataset/stats" });
     expect(stats.statusCode).toBe(200);

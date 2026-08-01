@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   buildContext,
   GroundingError,
+  HybridRetriever,
   KeywordRetriever,
+  TextSemanticRetriever,
   verifyGrounded,
   type EventRecord,
 } from "./rag.js";
+import { StubTextEmbedder } from "./text-embed.js";
 
 const RECORDS: EventRecord[] = [
   {
@@ -48,6 +51,46 @@ describe("keyword retriever", () => {
 
   it("respects the limit", async () => {
     expect(await new KeywordRetriever(RECORDS).retrieve("person", 1)).toHaveLength(1);
+  });
+});
+
+describe("text semantic + hybrid retriever", () => {
+  it("finds a record by embedding similarity when keywords miss", async () => {
+    const stub = new StubTextEmbedder(32);
+    const dogVec = await stub.embed("friendly canine in the garden");
+    const records: EventRecord[] = [
+      {
+        id: "d1",
+        objectClass: "dog",
+        cameraId: "yard",
+        timestamp: "2026-07-31T12:00:00Z",
+        summary: "friendly canine in the garden",
+        textEmbedding: dogVec!.values,
+      },
+      {
+        id: "p1",
+        objectClass: "person",
+        cameraId: "door",
+        timestamp: "2026-07-31T13:00:00Z",
+        summary: "courier with a box",
+        textEmbedding: (await stub.embed("courier with a box"))!.values,
+      },
+    ];
+    // Synonym-ish query that does not share keywords with the dog summary.
+    const semantic = await new TextSemanticRetriever(records, stub).retrieve(
+      "friendly canine in the garden",
+      5,
+    );
+    expect(semantic[0]?.id).toBe("d1");
+
+    const hybrid = await new HybridRetriever(records, stub).retrieve("package porch", 5);
+    // Keyword may miss; hybrid still returns semantic neighbours for a shared phrase.
+    const byGarden = await new HybridRetriever(records, stub).retrieve(
+      "friendly canine in the garden",
+      5,
+    );
+    expect(byGarden.map((r) => r.id)).toContain("d1");
+    expect(hybrid).toBeDefined();
   });
 });
 

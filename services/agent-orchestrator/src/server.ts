@@ -29,6 +29,10 @@ import {
   type OcrProvider,
   type PlateRecognition,
 } from "./plate-ocr.js";
+import {
+  createDefaultTextEmbedder,
+  type TextEmbedder,
+} from "./text-embed.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
@@ -43,9 +47,11 @@ interface ClassifyBody {
 export function buildOrchestrator(
   provider?: LlmProvider,
   ocrProvider?: OcrProvider,
+  textEmbedder?: TextEmbedder,
 ): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const ocr = ocrProvider ?? createDefaultOcrProvider();
+  const textEmbed = textEmbedder ?? createDefaultTextEmbedder();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -150,6 +156,23 @@ export function buildOrchestrator(
         latencyMs: Date.now() - started,
       });
     }
+  });
+
+  /** Text embedding for semantic RAG (not DINOv2 appearance). */
+  app.post("/text-embed", async (req, reply) => {
+    const body = req.body as { text?: string };
+    if (typeof body?.text !== "string" || body.text.trim() === "") {
+      return reply.status(400).send({ error: "text is required" });
+    }
+    const started = Date.now();
+    const result = await textEmbed.embed(body.text);
+    if (result === null) {
+      return reply.status(503).send({
+        error: "text embedder unavailable",
+        latencyMs: Date.now() - started,
+      });
+    }
+    return { embedding: result, latencyMs: Date.now() - started };
   });
 
   app.post("/classify", async (req, reply) => {

@@ -7,9 +7,11 @@
  * citing an id that was never retrieved is rejected outright.
  *
  * The vector store is optional by design (PRD: "Vector DB optional. Never
- * required."). `KeywordRetriever` provides the always-available fallback.
+ * required."). `KeywordRetriever` provides the always-available fallback;
+ * `HybridRetriever` unions keyword hits with text-embedding nearest neighbours.
  */
 import { z } from "zod";
+import type { TextEmbedder } from "./text-embed.js";
 
 /** One retrievable event record. */
 export const EventRecordSchema = z.object({
@@ -18,6 +20,8 @@ export const EventRecordSchema = z.object({
   cameraId: z.string().min(1),
   timestamp: z.string(),
   summary: z.string(),
+  /** Optional text embedding for semantic NN (not DINOv2 appearance). */
+  textEmbedding: z.array(z.number()).optional(),
 });
 
 export type EventRecord = z.infer<typeof EventRecordSchema>;
@@ -41,6 +45,22 @@ export class GroundingError extends Error {
     super(`answer cites records that were not retrieved: ${unknownCitations.join(", ")}`);
     this.name = "GroundingError";
   }
+}
+
+function cosine(a: number[], b: number[]): number {
+  if (a.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
 /**
@@ -76,10 +96,70 @@ export class KeywordRetriever implements Retriever {
 }
 
 /**
- * Reject any answer citing records outside the retrieved set.
+ * Text-embedding nearest-neighbour retriever (semantic RAG).
+ * Returns [] when the embedder fails or no vectors are stored.
+ */
+export class TextSemanticRetriever implements Retriever {
+  constructor(
+    private readonly records: EventRecord[],
+    private readonly embedder: TextEmbedder,
+  ) {}
+
+  async retrieve(query: string, limit: number): Promise<EventRecord[]> {
+    const emb = await this.embedder.embed(query);
+    if (emb === null) return [];
+    const scored = this.records
+      .filter((r) => r.textEmbedding !== undefined && r.textEmbedding.length === emb.values.length)
+      .map((record) => ({
+        record,
+        score: cosine(emb.values, record.textEmbedding!),
+      }))
+      .filter((s) => s.score > 0.05);
+    scored.sort(
+      (a, b) =>
+        b.score - a.score ||
+        Date.parse(b.record.timestamp) - Date.parse(a.record.timestamp) ||
+        a.record.id.localeCompare(b.record.id),
+    );
+    return scored.slice(0, limit).map((s) => s.record);
+  }
+}
+
+/**
+ * Union of keyword + text semantic hits (dedupe by id, keyword order first).
  *
- * This is the anti-hallucination gate for question answering: the model may
- * only speak about what retrieval actually returned.
+ * @example
+ * const hybrid = new HybridRetriever(records, new StubTextEmbedder());
+ * await hybrid.retrieve("golden dog", 5);
+ */
+export class HybridRetriever implements Retriever {
+  private readonly keyword: KeywordRetriever;
+  private readonly semantic: TextSemanticRetriever;
+
+  constructor(records: EventRecord[], embedder: TextEmbedder) {
+    this.keyword = new KeywordRetriever(records);
+    this.semantic = new TextSemanticRetriever(records, embedder);
+  }
+
+  async retrieve(query: string, limit: number): Promise<EventRecord[]> {
+    const [kw, sem] = await Promise.all([
+      this.keyword.retrieve(query, limit),
+      this.semantic.retrieve(query, limit),
+    ]);
+    const seen = new Set<string>();
+    const out: EventRecord[] = [];
+    for (const r of [...kw, ...sem]) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      out.push(r);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+}
+
+/**
+ * Reject any answer citing records outside the retrieved set.
  *
  * @throws {GroundingError} when a citation is not in `retrieved`.
  */

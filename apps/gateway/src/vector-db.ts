@@ -8,6 +8,7 @@
 import pg from "pg";
 import {
   DATASET_EMBED_DIM,
+  DATASET_TEXT_EMBED_DIM,
   globalDatasetStore,
   type DatasetProvenance,
   type DatasetRecord,
@@ -44,6 +45,8 @@ function rowToRecord(row: {
   snapshot_ref: string;
   embedding: unknown;
   embed_model: string | null;
+  text_embedding?: unknown;
+  text_embed_model?: string | null;
   provenance: DatasetProvenance;
 }): DatasetRecord {
   const record: DatasetRecord = {
@@ -62,8 +65,13 @@ function rowToRecord(row: {
   if (row.breed_or_model) record.breedOrModel = row.breed_or_model;
   if (row.descriptors) record.descriptors = row.descriptors;
   if (row.embed_model) record.embedModel = row.embed_model;
+  if (row.text_embed_model) record.textEmbedModel = row.text_embed_model;
   const embedding = parseVector(row.embedding);
   if (embedding !== undefined && embedding.length > 0) record.embedding = embedding;
+  const textEmbedding = parseVector(row.text_embedding);
+  if (textEmbedding !== undefined && textEmbedding.length > 0) {
+    record.textEmbedding = textEmbedding;
+  }
   return record;
 }
 
@@ -99,9 +107,20 @@ export class PgDatasetStore implements DatasetStoreLike {
         snapshot_ref TEXT NOT NULL,
         embedding vector(${DATASET_EMBED_DIM}),
         embed_model TEXT,
+        text_embedding vector(${DATASET_TEXT_EMBED_DIM}),
+        text_embed_model TEXT,
         provenance JSONB NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
+    `);
+    // Additive for DBs created before text RAG landed.
+    await this.pool.query(`
+      ALTER TABLE dataset_events
+        ADD COLUMN IF NOT EXISTS text_embedding vector(${DATASET_TEXT_EMBED_DIM})
+    `);
+    await this.pool.query(`
+      ALTER TABLE dataset_events
+        ADD COLUMN IF NOT EXISTS text_embed_model TEXT
     `);
   }
 
@@ -115,18 +134,26 @@ export class PgDatasetStore implements DatasetStoreLike {
     if (record.embedModel !== undefined) {
       provenance.embed_model = record.embedModel;
     }
+    if (record.textEmbedModel !== undefined) {
+      provenance.text_embed_model = record.textEmbedModel;
+    }
     const embedding =
       record.embedding !== undefined && record.embedding.length === DATASET_EMBED_DIM
         ? toVectorLiteral(record.embedding)
+        : null;
+    const textEmbedding =
+      record.textEmbedding !== undefined &&
+      record.textEmbedding.length === DATASET_TEXT_EMBED_DIM
+        ? toVectorLiteral(record.textEmbedding)
         : null;
     await this.pool.query(
       `INSERT INTO dataset_events (
         id, object_id, camera_id, class, license_plate, breed_or_model,
         confidence, timestamp, evidence, descriptors, snapshot_ref,
-        embedding, embed_model, provenance
+        embedding, embed_model, text_embedding, text_embed_model, provenance
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,
-        $12::vector,$13,$14::jsonb
+        $12::vector,$13,$14::vector,$15,$16::jsonb
       ) ON CONFLICT (id) DO NOTHING`,
       [
         record.id,
@@ -142,6 +169,8 @@ export class PgDatasetStore implements DatasetStoreLike {
         record.snapshotRef,
         embedding,
         record.embedModel ?? null,
+        textEmbedding,
+        record.textEmbedModel ?? null,
         JSON.stringify(provenance),
       ],
     );
@@ -153,7 +182,8 @@ export class PgDatasetStore implements DatasetStoreLike {
     const res = await this.pool.query(
       `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
               confidence, timestamp, evidence, descriptors, snapshot_ref,
-              embedding::text AS embedding, embed_model, provenance
+              embedding::text AS embedding, embed_model,
+              text_embedding::text AS text_embedding, text_embed_model, provenance
        FROM dataset_events
        WHERE lower(class) LIKE $1
           OR lower(coalesce(license_plate, '')) LIKE $1
@@ -173,10 +203,27 @@ export class PgDatasetStore implements DatasetStoreLike {
     const res = await this.pool.query(
       `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
               confidence, timestamp, evidence, descriptors, snapshot_ref,
-              embedding::text AS embedding, embed_model, provenance
+              embedding::text AS embedding, embed_model,
+              text_embedding::text AS text_embedding, text_embed_model, provenance
        FROM dataset_events
        WHERE embedding IS NOT NULL
        ORDER BY embedding <=> $1::vector
+       LIMIT $2`,
+      [toVectorLiteral(embedding), limit],
+    );
+    return res.rows.map(rowToRecord);
+  }
+
+  async searchByTextEmbedding(embedding: number[], limit = 50): Promise<DatasetRecord[]> {
+    if (embedding.length !== DATASET_TEXT_EMBED_DIM) return [];
+    const res = await this.pool.query(
+      `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
+              confidence, timestamp, evidence, descriptors, snapshot_ref,
+              embedding::text AS embedding, embed_model,
+              text_embedding::text AS text_embedding, text_embed_model, provenance
+       FROM dataset_events
+       WHERE text_embedding IS NOT NULL
+       ORDER BY text_embedding <=> $1::vector
        LIMIT $2`,
       [toVectorLiteral(embedding), limit],
     );
@@ -187,7 +234,8 @@ export class PgDatasetStore implements DatasetStoreLike {
     const res = await this.pool.query(
       `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
               confidence, timestamp, evidence, descriptors, snapshot_ref,
-              embedding::text AS embedding, embed_model, provenance
+              embedding::text AS embedding, embed_model,
+              text_embedding::text AS text_embedding, text_embed_model, provenance
        FROM dataset_events
        ORDER BY timestamp DESC
        LIMIT $1`,

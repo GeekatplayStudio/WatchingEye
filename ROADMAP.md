@@ -24,8 +24,8 @@ closing them before more Phase 6 depth.
 | P1 | **2.4** Event replay UI | ~~no past-event pipeline replay~~ ✅ select + path + provenance (no pixel retention) |
 | P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
-| P2 | **2.1c / 6.3** pgvector | dataset DINOv2 ✅; text semantic RAG still open |
-| P2 | **6.4** NL recall | ~~stub search only~~ ✅ grounded keyword recall + quotes; text-embed multimodal still open |
+| P2 | **2.1c / 6.3** pgvector | DINOv2 appearance ✅; text semantic RAG ✅ (`text_embedding` 768) |
+| P2 | **6.4** NL recall | grounded keyword ✅; CLIP multimodal still open |
 | P2 | **3.4** Split MCP servers | One read-only MCP baseline; not Camera/Timeline/Alert |
 
 ---
@@ -113,13 +113,17 @@ closing them before more Phase 6 depth.
 ### Step 2.1b — AI-safety screening ✅
 - [x] `guardrails::safety` + orchestrator `screen.ts` mirror
 
-### Step 2.1c — RAG grounding (partial)
+### Step 2.1c — RAG grounding ✅
 - [x] `KeywordRetriever` + `verifyGrounded`
 - [x] Live grounded keyword recall path — gateway `recall.ts` +
       `GET /api/dataset/recall` (multi-term score, yesterday/today window,
       template answer, citations ⊆ retrieved, evidence quotes)
-- [ ] pgvector-backed **text** semantic retriever (DINOv2 appearance
-      vectors are not text RAG; still open)
+- [x] pgvector-backed **text** semantic retriever —
+      orchestrator `text-embed.ts` (Ollama `nomic-embed-text` or
+      `WATCHINGEYE_TEXT_EMBED=stub`); `HybridRetriever` =
+      keyword ∪ text NN; `dataset_events.text_embedding vector(768)`
+      separate from DINOv2 `embedding vector(384)`; enroll + recall
+      best-effort text embed (soft-fail without model)
 
 ### Step 2.2 — VLM scene analysis (partial)
 - [x] Gated classify path: snapshot → VLM → guardrails → identity
@@ -273,9 +277,10 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 ### Step 6.4 — Natural language recall & multimodal search (partial)
 - [x] Grounded queries over dataset (plate / breed keywords, `yesterday` /
       `today` window) — `GET /api/dataset/recall` + dashboard quotes in
-      Active Tracking panel
-- [ ] Text-embedding / CLIP multimodal semantic search
-- Note: keyword + appearance-NN (`/similar`) only; no text vector column yet.
+      Active Tracking panel; hybrid keyword ∪ text-NN when text embedder
+      is available (Step 2.1c)
+- [ ] CLIP / open-vocab multimodal semantic search
+- Note: text RAG uses nomic/stub embeddings — not CLIP image↔text.
 
 ### Step 6.5 — Live active tracking monitor ✅
 - [x] Active tracking panel on console (NL quick-add → settings)
@@ -299,10 +304,10 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅ (CLIP breed/color + Paddle still open)
 10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
-12. **2.1c remaining** — text embedding semantic retriever ← **next**
-13. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
+12. ~~**2.1c** — text embedding semantic retriever~~ ✅
+13. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP ← **next**
 14. **2.2 latency** — GPU benchmark when hardware is available
-15. **6.2 remaining** — CLIP attrs / Paddle-LPR when needed
+15. **6.2 / 6.4 remaining** — CLIP attrs / Paddle-LPR / multimodal CLIP search
 
 ---
 

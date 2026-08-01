@@ -21,6 +21,8 @@ import { applyPatch, AVAILABLE_CLASSES, DEFAULT_SETTINGS, SettingsError, type Se
 import {
   DATASET_EMBED_DIM,
   DATASET_EMBED_MODEL,
+  DATASET_TEXT_EMBED_DIM,
+  DATASET_TEXT_EMBED_MODEL,
   globalDatasetStore,
   type DatasetProvenance,
   type DatasetRecord,
@@ -44,6 +46,8 @@ export interface ServerOptions {
    * supply a fixed 384-d vector; production calls the orchestrator.
    */
   embedder?: (image: string) => Promise<{ values: number[]; model: string } | null>;
+  /** Injectable text embedder (orchestrator `/text-embed` proxy). */
+  textEmbedder?: (text: string) => Promise<{ values: number[]; model: string } | null>;
 }
 
 /** Body of a classification request from the dashboard. */
@@ -89,6 +93,46 @@ async function defaultEmbedder(image: string): Promise<{ values: number[]; model
   }
 }
 
+async function defaultTextEmbedder(
+  text: string,
+): Promise<{ values: number[]; model: string } | null> {
+  if (text.trim() === "") return null;
+  try {
+    const res = await fetch(
+      `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/text-embed`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as EmbedResponse;
+    const values = body.embedding?.values;
+    if (!Array.isArray(values) || values.length === 0) return null;
+    return {
+      values,
+      model: body.embedding?.model ?? DATASET_TEXT_EMBED_MODEL,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Flatten enroll fields into text for the semantic embedder. */
+function enrollTextBlob(record: DatasetRecord): string {
+  const bits = [
+    record.class,
+    record.breedOrModel?.replaceAll("_", " ") ?? "",
+    record.licensePlate !== undefined ? `plate ${record.licensePlate}` : "",
+    `camera ${record.cameraId}`,
+    ...(record.descriptors ?? []).map((d) => `${d.key} ${d.value}`),
+    ...record.evidence.map((e) => `${e.label} ${e.description}`),
+  ];
+  return bits.filter((b) => b !== "").join(". ");
+}
+
 /** Build the gateway server with all routes registered. */
 export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
@@ -100,6 +144,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   const datasetStore: DatasetStoreLike = await createDatasetStore(databaseUrl);
   const classifier = opts.classifier ?? classify;
   const embedder = opts.embedder ?? defaultEmbedder;
+  const textEmbedder = opts.textEmbedder ?? defaultTextEmbedder;
   let settings: Settings = { ...DEFAULT_SETTINGS };
   const sockets = new Set<{ send: (data: string) => void }>();
   /** Cameras become known when they send frames — nothing is pre-registered. */
@@ -303,7 +348,16 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
     const { q, limit } = req.query as { q?: string; limit?: string };
     const n = Math.min(Number(limit ?? 20) || 20, 100);
     const all = await datasetStore.getAll(500);
-    return recallFromRecords(all, q ?? "", n);
+    const query = q ?? "";
+    let textHits: DatasetRecord[] = [];
+    const queryVec = await textEmbedder(query);
+    if (queryVec !== null && queryVec.values.length === DATASET_TEXT_EMBED_DIM) {
+      textHits = await datasetStore.searchByTextEmbedding(queryVec.values, n);
+    } else if (queryVec !== null) {
+      // Stub/Ollama dim may differ from 768 in tests — still search memory by length.
+      textHits = await datasetStore.searchByTextEmbedding(queryVec.values, n);
+    }
+    return recallFromRecords(all, query, n, new Date(), textHits);
   });
 
   /** Cosine nearest neighbours over enrolled appearance vectors. */
@@ -436,6 +490,14 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         record.embedding = embedded.values;
         record.embedModel = embedded.model;
         provenance.embed_model = embedded.model;
+        record.provenance = provenance;
+      }
+
+      const textEmbedded = await textEmbedder(enrollTextBlob(record));
+      if (textEmbedded !== null) {
+        record.textEmbedding = textEmbedded.values;
+        record.textEmbedModel = textEmbedded.model;
+        provenance.text_embed_model = textEmbedded.model;
         record.provenance = provenance;
       }
 
