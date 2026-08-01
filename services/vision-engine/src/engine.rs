@@ -1,10 +1,11 @@
-//! The live pipeline: frame → validate → motion → blobs → track → gate → zones → rules.
+//! The live pipeline: frame → validate → motion → (optional detector) → blobs → track → gate → zones → rules.
 //!
 //! Every stage records what it concluded and why, so [`FrameOutcome`] alone
-//! is enough to explain any result the dashboard renders. Nothing here
-//! consults a model; classification happens later, only for gated events.
-//! Rule actions are returned as [`PendingNotify`] — HTTP delivery lives in
-//! [`crate::notify`], never in this hot path.
+//! is enough to explain any result the dashboard renders. Object detection is
+//! motion-gated ([`crate::motion_detector_gate`]); the live binary leaves the
+//! detector unset (ADR 0004 — YOLO in the orchestrator). Classification of
+//! gated events remains the agent layer's job. Rule actions are returned as
+//! [`PendingNotify`] — HTTP delivery lives in [`crate::notify`], never here.
 
 use crate::api::FrameRequest;
 use crate::config::EngineConfig;
@@ -83,6 +84,8 @@ pub struct FrameOutcome {
     pub pinned_track_id: Option<Uuid>,
     /// Zone-enter events emitted on this frame (at most once per stay).
     pub zone_events: Vec<Event>,
+    /// True when the motion-gated object detector ran on this frame.
+    pub detector_invoked: bool,
     /// Rule actions awaiting async webhook delivery (not executed here).
     #[serde(skip)]
     pub pending_notifies: Vec<PendingNotify>,
@@ -227,6 +230,7 @@ fn rejected(frame_no: u64, servo: ServoCommand, reason: String, stage: &str) -> 
         pinned_status: PinnedStatus::Idle,
         pinned_track_id: None,
         zone_events: Vec::new(),
+        detector_invoked: false,
         pending_notifies: Vec::new(),
     }
 }
@@ -286,7 +290,7 @@ impl Engine {
         next
     }
 
-    /// Run one frame through every stage.
+    /// Run one frame through every stage (no object-detector backend).
     ///
     /// Takes the request by value so the sample buffer moves into the
     /// pipeline instead of being cloned — one fewer full-frame copy per
@@ -295,6 +299,24 @@ impl Engine {
     /// Invalid frames are rejected with a reason rather than processed —
     /// the frame validator is the first gate for a purpose.
     pub fn process(&mut self, req: FrameRequest) -> FrameOutcome {
+        self.process_with_optional_detector(req, None)
+    }
+
+    /// Like [`process`], optionally invoking `detector` **only when motion
+    /// is true** (ROADMAP 1.2). Static scenes never call `detect`.
+    pub fn process_with_detector(
+        &mut self,
+        req: FrameRequest,
+        detector: &mut dyn detector::Detector,
+    ) -> FrameOutcome {
+        self.process_with_optional_detector(req, Some(detector))
+    }
+
+    fn process_with_optional_detector(
+        &mut self,
+        req: FrameRequest,
+        detector: Option<&mut dyn detector::Detector>,
+    ) -> FrameOutcome {
         let expected = (req.width as usize) * (req.height as usize);
         let config = self.config;
         let rules = self.rules.clone();
@@ -361,6 +383,17 @@ impl Engine {
             changed_ratio * 100.0
         ));
 
+        let had_detector = detector.is_some();
+        let detector_invoked =
+            crate::motion_detector_gate::maybe_invoke(motion, detector, &frame);
+        if had_detector {
+            if detector_invoked {
+                trace.push("object_detector: invoked (motion)".to_owned());
+            } else {
+                trace.push("object_detector: skipped (static)".to_owned());
+            }
+        }
+
         let regions = blobs::extract_into(&mask, config.min_region_area, &mut state.scratch);
         trace.push(format!("blob_extraction: {} region(s)", regions.len()));
 
@@ -399,6 +432,7 @@ impl Engine {
             pinned_status: aim.pinned_status,
             pinned_track_id: aim.pinned_track_id,
             zone_events,
+            detector_invoked,
             pending_notifies,
         }
     }

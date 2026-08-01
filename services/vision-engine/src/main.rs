@@ -16,6 +16,8 @@ mod config;
 mod engine;
 #[cfg(test)]
 mod engine_soak;
+#[cfg(test)]
+mod engine_motion_soak;
 mod file_pump;
 #[cfg(test)]
 mod fixture_streams;
@@ -26,6 +28,7 @@ mod notify;
 mod onvif_client;
 mod pinned;
 mod pipeline;
+mod motion_detector_gate;
 mod reolink_client;
 mod rtsp;
 mod rule_set;

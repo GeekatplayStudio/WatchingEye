@@ -62,10 +62,14 @@ closing them before more Phase 6 depth.
       device missing). Not a `CameraSource` in `crates/camera` — same
       split as RTSP. CLI: `--camera usb [--input <device>]`
 
-### Step 1.2 — Motion detection (partial)
+### Step 1.2 — Motion detection ✅
 - [x] `crates/motion`: background model + blobs, wired into `vision-engine`
 - [x] Static scene reports no motion; localized change does
-- [ ] 1000-frame soak test proving zero detector invocations when static
+- [x] 1000-frame soak: zero detector invocations when static —
+      `Engine::process_with_detector` + `motion_detector_gate::maybe_invoke`
+      (detector optional; live path unset per ADR 0004);
+      `engine_motion_soak.rs` asserts `CountingDetector.calls == 0` over
+      1000 identical blanks, and that motion does invoke once
 
 ### Step 1.3 — ONNX YOLO detector (partial — ADR 0004)
 - [x] YOLO11n via `onnxruntime-node`: letterbox, decode, NMS, unit tests
@@ -332,8 +336,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 15. ~~**6.2 Paddle-LPR** — optional Python sidecar + cascade OCR~~ ✅
 16. ~~**6.4 multimodal CLIP search** — enroll CLIP-512 + hybrid recall~~ ✅
 17. ~~**2.2 latency record** — RTX 3090 + qwen2.5vl:7b p95 recorded (miss)~~ ✅
-18. **1.2 motion soak** — 1000-frame static → zero detector invocations ← **next**
-19. **1.3 remaining** — Rust YOLO when unblocked / &lt;100 ms detect
+18. ~~**1.2 motion soak** — 1000-frame static → zero detector invocations~~ ✅
+19. **1.3 remaining** — Rust YOLO when unblocked / &lt;100 ms detect ← **next**
 
 ---
 
