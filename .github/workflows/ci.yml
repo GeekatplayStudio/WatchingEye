@@ -29,6 +29,33 @@ jobs:
         env:
           RUSTDOCFLAGS: "-D warnings"
 
+  # ROADMAP 3.2 / A.2b — prove edge-node still links for Pi-class aarch64.
+  # Does not claim offline SQLite sync or on-device smoke on real hardware.
+  edge-node-pi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: edge-node-aarch64
+      - name: Install aarch64 linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Cross-compile edge-node (profile edge)
+        run: cargo build -p edge-node --profile edge --target aarch64-unknown-linux-gnu
+      - name: Report binary size
+        run: |
+          BIN=target/aarch64-unknown-linux-gnu/edge/edge-node
+          ls -la "$BIN"
+          SIZE=$(stat -c%s "$BIN")
+          echo "edge-node aarch64 (profile edge) size: ${SIZE} bytes"
+          # Soft ceiling — catch accidental dependency bloat; not the 309 KB claim.
+          test "$SIZE" -lt 1048576
+
   gateway:
     runs-on: ubuntu-latest
     defaults:

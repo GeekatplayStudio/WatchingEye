@@ -18,7 +18,7 @@ done (exceptions require an ADR).
 | Phase 0 Foundation | ✅ done |
 | Phase 1 Edge detection | ✅ **1.1–1.5 done** (identities + pipeline events in SQLite) |
 | Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (best ~3.9 s `llava`) |
-| Phase 3 Multi-cam / edge | **3.3 + 3.5** ✅; ESP32 board selected (firmware pending); Pi CI / split MCP open |
+| Phase 3 Multi-cam / edge | **3.3 + 3.5** ✅; Pi CI gate ✅; ESP32 board selected (firmware pending); split MCP open |
 | Phase 6 NL + vector dataset | **6.1, 6.2, 6.4, 6.5** ✅; **6.3** missing CLIP attr vectors column |
 | Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice contracts only) |
 
@@ -35,7 +35,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 | P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
 | P2 | **6.3** CLIP attr vectors | `clip_embedding` for search ✅; separate open-vocab attr vectors still open |
 | P2 | **2.1** Rust LLM provider | Orchestrator TS only |
-| P2 | **3.2 / A.2b** Pi CI | `edge-node` binary exists; no Pi cross-compile gate |
+| P2 | **3.2** edge offline cache | Pi CI gate ✅; SQLite cache + sync-on-reconnect still open |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
 | P2 | **3.4** Split MCP | One read-only baseline; not Camera/Timeline/Alert servers |
 | P2 | **V.1 / V.2** Voice | Schemas/tests only; no Whisper/Piper live loop |
@@ -206,7 +206,10 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 
 ### Step 3.2 — Raspberry Pi edge mode (partial)
 - [x] `edge-node` binary (~309 KB) wire-compatible with vision-engine
-- [ ] Pi cross-compile in CI; offline SQLite cache + sync-on-reconnect
+- [x] Pi cross-compile gate in CI — `edge-node-pi` job builds
+      `aarch64-unknown-linux-gnu` with `--profile edge` (see `.github/workflows/ci.yml`
+      + `.cargo/config.toml`); soft size ceiling 1 MiB; not a live-Pi smoke test
+- [ ] Offline SQLite cache + sync-on-reconnect
 
 ### Step 3.3 — RTSP/IP camera backend ✅
 - [x] RTSP connect/disconnect + Discover UI; frames into the real pipeline
@@ -256,7 +259,8 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
 
 ### Step A.2b — Two-app split (partial)
 - [x] Desktop hub + `edge-node` (309 KB); hot-path and binary size wins
-- [ ] Pi CI cross-compile gate; ESP32 `no_std` port
+- [x] Pi CI cross-compile gate (`edge-node-pi` / aarch64)
+- [ ] ESP32 `no_std` port (board selected — Freenove S3 CAM; encode later)
 
 ### Step A.3 — Device transport ⛔ not started
 - [ ] WiFi / BLE / serial `transport` crate; ESP32 command path; deadman
@@ -373,7 +377,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 21. ~~**3.3 RTSP scale** — durable camera SQLite + 4-pump soak~~ ✅
 22. ~~**2.2 comparative VLM** — multi-model matrix; prefer `llava` (~3.9 s); budget still open~~ ✅
 23. ~~**ESP32 lab board** — Freenove ESP32-S3 CAM docs + board profile~~ ✅ (encode when hardware arrives)
-24. **Pi CI / 6.3 CLIP attr vectors / ESP32 firmware encode** ← opportunistic next
+24. ~~**Pi CI** — `edge-node` aarch64 cross-compile gate in GitHub Actions~~ ✅
+25. **6.3 CLIP attr vectors / edge offline cache / ESP32 firmware encode** ← opportunistic next
 
 ---
 

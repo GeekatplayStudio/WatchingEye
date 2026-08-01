@@ -7,7 +7,7 @@ this folder is the **operator-facing** inventory and bring-up notes.
 | Device | Role | Status |
 |--------|------|--------|
 | [Freenove ESP32-S3 CAM (16 MB)](freenove-esp32-s3-cam.md) | Embedded capture / stream test board (no on-device AI) | **Selected** — board arriving; firmware encode deferred |
-| Raspberry Pi (any class that runs `edge-node`) | Edge pipeline binary | Binary exists; Pi CI gate still open |
+| Raspberry Pi (any class that runs `edge-node`) | Edge pipeline binary | Binary + **CI aarch64 gate** ✅; offline cache still open |
 | USB webcam / RTSP NVR | Desktop hub cameras | Live today (`vision-engine`) |
 
 PRD rule for the ESP32 tier: **capture → compress → (optional encrypt) →

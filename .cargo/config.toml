@@ -1,0 +1,10 @@
+# Cross-link settings for Raspberry Pi-class builds of `edge-node`.
+# Used by CI (`edge-node-pi` job) and local:
+#   rustup target add aarch64-unknown-linux-gnu
+#   # Debian/Ubuntu: sudo apt install gcc-aarch64-linux-gnu
+#   cargo build -p edge-node --profile edge --target aarch64-unknown-linux-gnu
+#
+# Host builds (windows / native linux / macos) ignore this table.
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"

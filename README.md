@@ -189,8 +189,9 @@ cd apps/dashboard && NEXT_DIST_DIR=.next-prod npx next build
 
 ```bash
 cargo build -p edge-node --profile edge          # size-first build
-# Raspberry Pi cross-compile:
+# Raspberry Pi cross-compile (CI job `edge-node-pi` runs this on every push):
 rustup target add aarch64-unknown-linux-gnu
+# Debian/Ubuntu: sudo apt install gcc-aarch64-linux-gnu
 cargo build -p edge-node --profile edge --target aarch64-unknown-linux-gnu
 ```
 

@@ -34,6 +34,8 @@ Project subagents live in `.claude/agents/`. Delegate to them by name:
 
 - Rust: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo fmt --all`
+- Pi cross-compile (also CI `edge-node-pi`):  
+  `cargo build -p edge-node --profile edge --target aarch64-unknown-linux-gnu`
 - Rust perf bench: `cargo run -p motion --example bench --release`
 - Gateway: `cd apps/gateway && npm test`
 - Orchestrator: `cd services/agent-orchestrator && npm test`
