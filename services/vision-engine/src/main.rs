@@ -14,7 +14,11 @@ mod cameras_api;
 mod cli;
 mod config;
 mod engine;
+#[cfg(test)]
+mod engine_soak;
 mod file_pump;
+#[cfg(test)]
+mod fixture_streams;
 mod identify;
 mod identity_store;
 mod netscan;

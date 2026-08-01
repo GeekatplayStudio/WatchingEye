@@ -254,4 +254,38 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].track_index, 0);
     }
+
+    #[test]
+    fn two_tracks_keep_indices_across_100_predicted_frames() {
+        // Pure association soak (secondary to the live Engine soak).
+        let mut tracks = [
+            TrackState {
+                bbox: bbox(8.0, 24.0, 8.0, 12.0),
+                vx: 1.0,
+                vy: 0.0,
+            },
+            TrackState {
+                bbox: bbox(50.0, 24.0, 8.0, 12.0),
+                vx: 1.0,
+                vy: 0.0,
+            },
+        ];
+        for _ in 0..100 {
+            let detections = [
+                bbox(tracks[0].bbox.x + tracks[0].vx, 24.0, 8.0, 12.0),
+                bbox(tracks[1].bbox.x + tracks[1].vx, 24.0, 8.0, 12.0),
+            ];
+            let matches = associate_predicted(&detections, &tracks, 0.15);
+            assert_eq!(matches.len(), 2);
+            for m in &matches {
+                assert_eq!(
+                    m.detection_index, m.track_index,
+                    "tracks must not swap identities"
+                );
+            }
+            for m in matches {
+                tracks[m.track_index].bbox = detections[m.detection_index];
+            }
+        }
+    }
 }

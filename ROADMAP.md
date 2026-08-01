@@ -18,8 +18,9 @@ closing them before more Phase 6 depth.
 |----------|------|-----|
 | P0 | **1.5** SQLite object DB | ~~No sqlite/sqlx anywhere~~ ✅ identity persistence shipped; events remain memory/Postgres JSONB only |
 | P0 | **1.1** File & USB camera backends | File `CameraSource` + CLI pump + golden tests ✅; USB still deferred |
-| P1 | **1.4** Tracker soak + snapshot fixtures | IoU works; no 100-frame soak / fixture-video snapshot tests in CI |
+| P1 | **1.4** Tracker soak + snapshot fixtures | ~~no 100-frame soak / fixture snapshots~~ ✅ synthetic gray8 sequences + live `Engine::process` soak in CI |
 | P1 | **2.3** Rules → notify webhook | ~~Rule types exist; no HTTP webhook delivery~~ ✅ zone enter + webhook + determinism tests |
+| P1 | **2.2** VLM golden / latency | Golden fixture CI ✅; &lt;300 ms GPU latency gate still open |
 | P1 | **2.4** Event replay UI | Live evidence yes; no past-event pipeline replay |
 | P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
@@ -70,10 +71,14 @@ closing them before more Phase 6 depth.
 - [ ] Rust `Detector` trait backend (blocked on MSVC; ADR 0004)
 - [ ] Latency < 100 ms (currently ~490 ms CPU)
 
-### Step 1.4 — Temporal validation + tracker hardening (partial)
+### Step 1.4 — Temporal validation + tracker hardening ✅
 - [x] `tracker::association`: IoU + greedy matching; live engine uses IoU
-- [ ] Snapshot tests of full event streams for 3 fixture videos
-- [ ] Formal soak: two people keep distinct UUIDs across 100 frames
+- [x] Snapshot tests of full event streams for 3 synthetic gray sequences
+      (`static`, `one_walker`, `two_walkers` — 96×72 gray8,
+      FileCamera-compatible; not MP4) in `fixture_streams.rs`
+- [x] Formal soak: two people keep distinct UUIDs across 100 frames via
+      live `Engine::process` + `associate_predicted` (`engine_soak.rs`);
+      secondary pure-association soak in `tracker::association`
 
 ### Step 1.5 — SQLite object database (partial)
 - [x] Engine restart resumes with prior identities intact — `rusqlite`
@@ -114,7 +119,10 @@ closing them before more Phase 6 depth.
 ### Step 2.2 — VLM scene analysis (partial)
 - [x] Gated classify path: snapshot → VLM → guardrails → identity
 - [ ] End-to-end latency < 300 ms gate-open → decision (GPU benchmark)
-- [ ] Fixture-image golden decision test in CI
+- [x] Fixture-image golden decision test in CI —
+      `fixtures/golden-scene.png` + `golden-decision.test.ts` runs
+      snapshot → StubProvider VLM → guardrails → `outcome: "action"`
+      in the orchestrator vitest job (no Ollama required)
 
 ### Step 2.3 — Rule engine expansion + actions ✅
 - [x] Zones, time windows, notify webhook end-to-end —
@@ -255,9 +263,12 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 2. ~~**1.5** — SQLite identity persistence~~ ✅ (event persistence still open)
 3. ~~**1.1** — file camera backend + golden fixture test~~ ✅ (USB still open)
 4. ~~**2.3** — notify webhook from rules~~ ✅
-5. **1.4 / 2.2** — soak + golden VLM CI gates
-6. Then resume Phase 6.2–6.3 depth
-7. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
+5. ~~**1.4** — tracker soak + gray-sequence snapshot fixtures~~ ✅
+6. ~~**2.2** — fixture-image golden decision in CI~~ ✅ (GPU &lt;300 ms latency still open)
+7. **2.4** — event replay UI ← **next**
+8. Then resume Phase 6.2–6.3 depth / pgvector
+9. **1.1 USB** — when a native capture backend is needed beyond browser/RTSP
+10. **2.2 latency** — GPU benchmark when hardware is available
 
 ---
 
