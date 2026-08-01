@@ -92,6 +92,7 @@ export function buildOrchestrator(
       detector: modelAvailable() ? "yolo11n-onnx" : "unavailable",
       embedder: embedModelAvailable() ? "dinov2-vits14-onnx" : "unavailable",
       openVocab: openVocab.name,
+      ocr: ocr.name,
     };
   });
 

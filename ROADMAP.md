@@ -268,7 +268,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 - [x] Real OCR ANPR path — orchestrator `plate-ocr.ts`: vehicle plate-band
       crop → injectable `OcrProvider` → regex confirm → VLM regex fallback;
       gateway passes `anpr: true` and prefers orchestrator `plate` evidence.
-      Enable tesseract with `WATCHINGEYE_OCR=tesseract` (soft-fail otherwise).
+      Enable tesseract with `WATCHINGEYE_OCR=tesseract`, PaddleOCR with
+      `paddle` / `auto` (soft-fail otherwise).
 - [x] Breed/color extractor with confidence beyond VLM text —
       `open-vocab.ts`: HSV colour histogram banks (`fur_color` /
       `vehicle_color`) + stub breed path (`WATCHINGEYE_OPEN_VOCAB=stub`);
@@ -277,7 +278,10 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 - [x] Full CLIP ViT-B/32 zero-shot ONNX banks for breed/color —
       `export-open-vocab-clip.py` + `OnnxClipOpenVocabScorer` (soft-fail
       without weights; composite with HSV when assets present)
-- [ ] Dedicated Paddle/Fast-LPR plate detector when generic OCR misses
+- [x] Dedicated Paddle/Fast-LPR plate path when generic OCR misses —
+      `plate-lpr.ts` + `scripts/paddle-lpr.py` sidecar; soft-empty without
+      `paddleocr`. Enable with `WATCHINGEYE_OCR=paddle` or `auto` (paddle →
+      tesseract cascade). Regex/VLM fallback unchanged.
 
 ### Step 6.3 — Multimodal vector dataset auto-builder (partial)
 - [x] Persist gated enrollments + DINOv2 vectors into pgvector with
@@ -315,15 +319,16 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 6. ~~**2.2** — fixture-image golden + opt-in GPU latency harness~~ ✅ (proven &lt;300 ms on GPU still open)
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
 8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP / text RAG still open)
-9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅ (CLIP breed/color + Paddle still open)
+9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅
 10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
 12. ~~**2.1c** — text embedding semantic retriever~~ ✅
 13. ~~**6.2 breed/color open-vocab** — HSV banks + stub~~ ✅
 14. ~~**6.2 CLIP ONNX zero-shot** — optional ViT-B/32 banks~~ ✅
-15. **6.2 Paddle-LPR** / **6.4 multimodal CLIP search** ← **next**
-16. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
-17. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
+15. ~~**6.2 Paddle-LPR** — optional Python sidecar + cascade OCR~~ ✅
+16. **6.4 multimodal CLIP search** ← **next**
+17. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
+18. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
 
 ---
 

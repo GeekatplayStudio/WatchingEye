@@ -63,9 +63,11 @@ graph TD
 - **Detection:** YOLO11n ONNX (shipped, ADR 0004).
 - **Appearance ReID:** DINOv2-small ONNX global descriptors → Rust dual-bank memory (shipped, Step 3.5).
 - **ANPR:** orchestrator OCR provider path (`plate-ocr.ts`) + regex confirm +
-  VLM regex fallback; gateway stays AI-free. Tesseract optional via
-  `WATCHINGEYE_OCR=tesseract`. Paddle/Fast-LPR still planned.
-- **Open-vocab attributes:** SigLIP/CLIP for breed/color/make — planned (ROADMAP 6.2).
+  VLM regex fallback; gateway stays AI-free. Optional backends:
+  `WATCHINGEYE_OCR=tesseract` (tesseract.js), `paddle` / `auto` (PaddleOCR
+  Python sidecar in `scripts/paddle-lpr.py`, soft-empty without deps).
+- **Open-vocab attributes:** CLIP ViT-B/32 ONNX banks + HSV colour fallback
+  (ROADMAP 6.2); SigLIP still optional.
 - **Identity Registry:** `identity` crate — attrs ⊕ appearance; distinctive refute; Hungarian batch; multi-cam timeline (shipped).
 
 ### 3. Vector Database & Dataset Auto-Builder (`apps/gateway/src/vector-db.ts`)

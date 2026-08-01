@@ -2,12 +2,14 @@
  * Plate OCR path for ANPR (ROADMAP 6.2).
  *
  * Gateway stays AI-free: OCR runs here. Providers are injectable so CI uses a
- * stub; production may enable tesseract.js via `WATCHINGEYE_OCR=tesseract`.
- * Regex over OCR text is preferred; VLM/raw text is the deterministic fallback.
+ * stub; production may enable tesseract.js (`WATCHINGEYE_OCR=tesseract`),
+ * PaddleOCR sidecar (`paddle`), or cascade (`auto`). Regex over OCR text is
+ * preferred; VLM/raw text is the deterministic fallback.
  */
 import jpeg from "jpeg-js";
 import { cropRgba, type NormBBox } from "./embed.js";
 import { extractLicensePlate, type LicensePlateResult } from "./anpr.js";
+import { CascadeOcrProvider, PaddleLprProvider } from "./plate-lpr.js";
 
 /** How a plate was recovered — recorded in evidence / provenance. */
 export type PlateSource = "ocr" | "regex_vlm";
@@ -178,12 +180,21 @@ async function readPlateFromImage(
 }
 
 /**
- * Default provider: tesseract when `WATCHINGEYE_OCR=tesseract`, else noop
- * (regex_vlm still works).
+ * Default provider from `WATCHINGEYE_OCR`:
+ * - `tesseract` — tesseract.js (soft-fail)
+ * - `paddle` — Python PaddleOCR sidecar (soft-fail)
+ * - `auto` — paddle then tesseract cascade
+ * - otherwise — noop (regex_vlm still works)
  */
 export function createDefaultOcrProvider(): OcrProvider {
-  if ((process.env.WATCHINGEYE_OCR ?? "").toLowerCase() === "tesseract") {
-    return new TesseractOcrProvider();
+  const mode = (process.env.WATCHINGEYE_OCR ?? "").toLowerCase();
+  if (mode === "tesseract") return new TesseractOcrProvider();
+  if (mode === "paddle") return new PaddleLprProvider();
+  if (mode === "auto") {
+    return new CascadeOcrProvider([
+      new PaddleLprProvider(),
+      new TesseractOcrProvider(),
+    ]);
   }
   return new NoopOcrProvider();
 }
