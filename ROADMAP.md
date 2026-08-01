@@ -20,7 +20,7 @@ closing them before more Phase 6 depth.
 | P0 | **1.1** File & USB camera backends | ~~File + USB~~ ✅ ffmpeg USB/V4L2 pump in vision-engine (same grid as RTSP; `camera` crate stays decode-free) |
 | P1 | **1.4** Tracker soak + snapshot fixtures | ~~no 100-frame soak / fixture snapshots~~ ✅ synthetic gray8 sequences + live `Engine::process` soak in CI |
 | P1 | **2.3** Rules → notify webhook | ~~Rule types exist; no HTTP webhook delivery~~ ✅ zone enter + webhook + determinism tests |
-| P1 | **2.2** VLM golden / latency | Golden fixture CI ✅; &lt;300 ms GPU latency gate still open |
+| P1 | **2.2** VLM golden / latency | Golden CI ✅; opt-in GPU harness ✅; proven &lt;300 ms on GPU still open |
 | P1 | **2.4** Event replay UI | ~~no past-event pipeline replay~~ ✅ select + path + provenance (no pixel retention) |
 | P1 | **6.1** NL intent → pipeline | ~~Settings only~~ ✅ wired via `intent-apply.ts` |
 | P2 | **3.1** ESP32 firmware | `edge/esp32/README.md` only — no firmware crate |
@@ -128,11 +128,17 @@ closing them before more Phase 6 depth.
 
 ### Step 2.2 — VLM scene analysis (partial)
 - [x] Gated classify path: snapshot → VLM → guardrails → identity
-- [ ] End-to-end latency < 300 ms gate-open → decision (GPU benchmark)
+- [x] Opt-in GPU latency benchmark harness —
+      `classify-latency.bench.test.ts` + `npm run test:gpu-latency`
+      (`WATCHINGEYE_GPU_LATENCY=1`); times warm gate→decision on
+      `fixtures/golden-scene.png`; asserts &lt; 300 ms; skipped in default CI
+- [ ] Proven p95 &lt; 300 ms recorded on GPU hardware (run the harness and
+      keep a green result — CPU Ollama usually misses the budget)
 - [x] Fixture-image golden decision test in CI —
       `fixtures/golden-scene.png` + `golden-decision.test.ts` runs
       snapshot → StubProvider VLM → guardrails → `outcome: "action"`
       in the orchestrator vitest job (no Ollama required)
+- Note: see `services/agent-orchestrator/docs/gpu-latency.md`
 
 ### Step 2.3 — Rule engine expansion + actions ✅
 - [x] Zones, time windows, notify webhook end-to-end —
@@ -299,15 +305,15 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 3. ~~**1.1** — file + USB camera backends (ffmpeg USB/V4L2 in vision-engine)~~ ✅
 4. ~~**2.3** — notify webhook from rules~~ ✅
 5. ~~**1.4** — tracker soak + gray-sequence snapshot fixtures~~ ✅
-6. ~~**2.2** — fixture-image golden decision in CI~~ ✅ (GPU &lt;300 ms latency still open)
+6. ~~**2.2** — fixture-image golden + opt-in GPU latency harness~~ ✅ (proven &lt;300 ms on GPU still open)
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
 8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP / text RAG still open)
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅ (CLIP breed/color + Paddle still open)
 10. ~~**6.4** — grounded keyword NL recall~~ ✅ (text-embed multimodal still open)
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
 12. ~~**2.1c** — text embedding semantic retriever~~ ✅
-13. **2.2 latency** — GPU benchmark when hardware is available ← **next**
-14. **6.2 / 6.4 remaining** — CLIP attrs / Paddle-LPR / multimodal CLIP search
+13. **6.2 / 6.4 remaining** — CLIP attrs / Paddle-LPR / multimodal CLIP ← **next**
+14. **2.2 proven latency** — run `npm run test:gpu-latency` on GPU and record a pass
 15. **1.2 / 1.3 remaining** — motion soak / Rust YOLO when unblocked
 
 ---
