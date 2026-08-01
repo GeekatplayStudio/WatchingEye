@@ -66,7 +66,29 @@ if (Test-Path $yolo) {
     }
 }
 
+# --- DINOv2 appearance embedding (ONNX, for hybrid ReID) ---
+Write-Step "Downloading DINOv2-small appearance model (ONNX)"
+$dino = "$models\vision\dinov2_vits14.onnx"
+if (Test-Path $dino) {
+    Write-Host "Already present: $dino"
+} else {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -eq $python) {
+        Write-Host "Python not found - skipping DINOv2 export." -ForegroundColor Yellow
+        Write-Host "Install Python, then run: python scripts/export-dinov2.py" -ForegroundColor Yellow
+    } else {
+        pip install --quiet torch torchvision transformers onnx
+        python "$root\scripts\export-dinov2.py" --out $dino
+        if (Test-Path $dino) {
+            Write-Host "Saved to $dino"
+        } else {
+            Write-Host "DINOv2 export failed — appearance ReID stays unavailable." -ForegroundColor Yellow
+        }
+    }
+}
+
 Write-Host "`nModel install complete. Inventory:" -ForegroundColor Green
 Write-Host "  Ollama:  qwen2.5vl:7b (VLM), llama3.2:3b (LLM)"
 Write-Host "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
 Write-Host "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
+Write-Host "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"

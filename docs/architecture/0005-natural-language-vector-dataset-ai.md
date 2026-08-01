@@ -1,17 +1,27 @@
 # ADR 0005: Natural Language Dynamic Tracking, Deep Vision Recognition & Vector Dataset AI
 
 ## Status
-Proposed / Specified in Phase 6
+**Partially implemented** (Phase 6). Appearance ReID foundation shipped in
+Step 3.5; NL intent, vector dataset, and open-vocab extractors remain.
 
 ## Context
-The WatchingEye edge-vision platform currently uses a deterministic Rust core (`vision-engine`) for frame validation, motion detection, and IoU tracking, coupled with a Node/LangGraph orchestrator for YOLO object detection and VLM scene analysis.
+The WatchingEye edge-vision platform uses a deterministic Rust core
+(`vision-engine`) for frame validation, motion detection, and IoU tracking,
+coupled with a Node/LangGraph orchestrator for YOLO detection, DINOv2
+appearance embeddings, and VLM scene analysis.
 
-To achieve a **superior image/video recognition and event-collection AI**, users need to:
-1. Register and modify tracking targets dynamically using **Natural Language Prompts** (e.g., *"track and register all dogs"*, *"track all cars passing by my house and capture all license plates"*).
-2. Perform **Deep Vision Recognition**: License plate OCR (ANPR), dog breed identification, color, speed, trajectory, and biometric identity matching.
-3. Automatically build an **Indexed Vector Dataset** in pgvector / Qdrant with full provenance (**Who, When, What**).
-4. Perform **Natural Language Recall & Search**: Query historical records conversantly (e.g., *"Show all golden retrievers seen yesterday"*, *"When did license plate ABC-1234 pass by?"*).
-5. Inspect live dynamic tracking activity in real-time on the Dashboard.
+**Shipped (Step 3.5):** hybrid identity (`crates/identity`) blends VLM
+attribute matching with DINOv2 cosine similarity, dual-bank appearance
+memory, ambiguity gating, Hungarian batch assign, and multi-camera
+timelines. Model output still never decides identity alone — Rust arithmetic
+does, with provenance on the outcome.
+
+Still required for a full Phase 6 product:
+1. Register tracking targets via **natural language** (*"track all dogs"*).
+2. Deeper recognition: real ANPR OCR, fine-grained breed/color (SigLIP/CLIP).
+3. Indexed **vector dataset** in pgvector with Who/When/What provenance.
+4. Natural-language **recall** over that dataset (grounded RAG).
+5. Live dynamic tracking control panel driven by NL prompts.
 
 ## Architecture & Data Flow
 
@@ -22,7 +32,7 @@ graph TD
     B -->|Target Vectors & Prompts| D[Orchestrator Open-Vocab & ANPR]
     
     C -->|Frame Blobs & Tracks| D
-    D -->|YOLO11 + ANPR OCR + CLIP/SigLIP| E[Deep Attribute Extractor]
+    D -->|YOLO11 + DINOv2 + ANPR OCR + CLIP/SigLIP| E[Deep Attribute Extractor]
     
     E -->|Structured Event + Embedding| F[Multimodal Vector DB - pgvector]
     F -->|Who, When, What Index| G[Vector Recall Engine]
@@ -46,15 +56,17 @@ graph TD
   }
   ```
 - Hot-reloads pipeline filters via Fastify gateway WebSocket broadcast without restarting `vision-engine`.
+- **Status:** baseline parser + `/parse-intent` exist; full exit criteria in ROADMAP 6.1.
 
 ### 2. Deep Vision Recognition Stack
-- **Detection & Segmentation**: YOLO11 for fast detection + SAM2 (Segment Anything 2) for crisp mask cropping.
-- **ANPR (Automatic Number Plate Recognition)**: License plate detection + OCR pipeline (Fast-LPR / PaddleOCR).
-- **Attribute & Feature Extractor**: SigLIP/CLIP embeddings for fine-grained breed, color, and make/model identification.
-- **Identity Registry**: `identity` crate matches visual embeddings to track individuals (e.g. `Dog #3 (Max)` or `Vehicle #12 (License ABC-1234)`).
+- **Detection:** YOLO11n ONNX (shipped, ADR 0004).
+- **Appearance ReID:** DINOv2-small ONNX global descriptors → Rust dual-bank memory (shipped, Step 3.5).
+- **ANPR:** regex / VLM text today; real OCR still planned.
+- **Open-vocab attributes:** SigLIP/CLIP for breed/color/make — planned (ROADMAP 6.2).
+- **Identity Registry:** `identity` crate — attrs ⊕ appearance; distinctive refute; Hungarian batch; multi-cam timeline (shipped).
 
 ### 3. Vector Database & Dataset Auto-Builder (`apps/gateway/src/vector-db.ts`)
-- Stores every event with 512-dimensional multimodal embeddings into `pgvector`:
+- Stores every event with multimodal embeddings into `pgvector`:
   ```sql
   CREATE TABLE dataset_events (
       id UUID PRIMARY KEY,
@@ -72,11 +84,15 @@ graph TD
       provenance JSONB NOT NULL
   );
   ```
+- **Status:** not shipped; DINOv2 vectors today live only in the in-memory identity gallery.
 
-### 4. Natural Language Recall & Grounded RAG Search (`services/agent-orchestrator/src/rag-search.ts`)
-- Converts user queries (*"Show all golden retrievers seen yesterday"*) into hybrid semantic vector search + SQL temporal filtering.
-- Returns grounded results with evidence snapshots and timeline markers.
+### 4. Natural Language Recall & Grounded RAG Search
+- Planned: hybrid vector + SQL recall with `verifyGrounded` (keyword RAG exists).
 
-### 5. Live Active Tracking Monitor (`apps/dashboard/components/active-tracking-panel.tsx`)
-- Displays currently active tracking directives.
-- Features quick-add text prompt input and live enrollment counters.
+### 5. Live Active Tracking Monitor
+- Console panel scaffold exists; NL quick-add → engine broadcast remains ROADMAP 6.5.
+
+## Consequences
+- Appearance ReID must stay on the slow path (orchestrator), never the motion path.
+- Distinctive attribute refute always beats embedding similarity.
+- Phase 6 vector DB should reuse the same embedding model version string in provenance.

@@ -13,6 +13,13 @@ import { OllamaProvider, type LlmProvider } from "./llm.js";
 import { extractDescriptors, makeVlmAnalyzer } from "./vlm.js";
 import { identify, type IdentificationOutcome } from "./identity.js";
 import { detect, modelAvailable } from "./detect.js";
+import { identifyDetections } from "./identify-detections.js";
+import {
+  embed,
+  embedModelAvailable,
+  type AppearanceEmbedding,
+  type NormBBox,
+} from "./embed.js";
 import { TriggerEventSchema } from "./schema.js";
 import { parseNaturalLanguageIntent } from "./nl-parser.js";
 import { resolveVlmModel, type ModelResolution } from "./vlm-model.js";
@@ -57,6 +64,7 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
       vlm,
       provider: provider?.name ?? "ollama",
       detector: modelAvailable() ? "yolo11n-onnx" : "unavailable",
+      embedder: embedModelAvailable() ? "dinov2-vits14-onnx" : "unavailable",
     };
   });
 
@@ -73,21 +81,60 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
    * Full-frame object detection, independent of motion. This is the path
    * that names stationary things; a parked car never trips the motion
    * pipeline, but it is still there and this still sees it.
+   *
+   * Pass `identify: true` to embed each box and run Hungarian batch
+   * assignment against the identity registry (opt-in — keeps the 1.2s
+   * labelling cadence cheap by default).
    */
   app.post("/detect", async (req, reply) => {
-    const body = req.body as { image?: string };
+    const body = req.body as {
+      image?: string;
+      identify?: boolean;
+      cameraId?: string;
+    };
     if (typeof body?.image !== "string" || body.image === "") {
       return reply.status(400).send({ error: "image (base64 JPEG) is required" });
     }
     const started = Date.now();
     try {
       const result = await detect(body.image);
-      return { ...result, latencyMs: Date.now() - started };
+      if (body.identify === true) {
+        const objects = await identifyDetections(
+          body.image,
+          result.objects,
+          typeof body.cameraId === "string" && body.cameraId !== ""
+            ? body.cameraId
+            : "detect",
+        );
+        return { ...result, objects, identified: true, latencyMs: Date.now() - started };
+      }
+      return { ...result, identified: false, latencyMs: Date.now() - started };
     } catch (err) {
       // Detection failing is a visible outcome, not a guess: the caller
       // shows "detector unavailable", never invented boxes.
       return reply.status(503).send({
         error: err instanceof Error ? err.message : "detection failed",
+        latencyMs: Date.now() - started,
+      });
+    }
+  });
+
+  /**
+   * Appearance embedding (DINOv2). Optional `bbox` crops to the subject
+   * before embedding — preferred when YOLO already named the object.
+   */
+  app.post("/embed", async (req, reply) => {
+    const body = req.body as { image?: string; bbox?: NormBBox };
+    if (typeof body?.image !== "string" || body.image === "") {
+      return reply.status(400).send({ error: "image (base64 JPEG) is required" });
+    }
+    const started = Date.now();
+    try {
+      const result = await embed(body.image, body.bbox);
+      return { ...result, latencyMs: Date.now() - started };
+    } catch (err) {
+      return reply.status(503).send({
+        error: err instanceof Error ? err.message : "embedding failed",
         latencyMs: Date.now() - started,
       });
     }
@@ -150,8 +197,9 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
         const claimed = decided?.evidence
           ?.find((e) => e.label.startsWith("class:"))
           ?.label.slice("class:".length);
-        if (descriptors.length > 0 && claimed !== undefined) {
-          identity = await identify(claimed, descriptors, parsed.data.cameraId);
+        if ((descriptors.length > 0 || embedModelAvailable()) && claimed !== undefined) {
+          const appearance = await appearanceForClassify(body.image ?? "", claimed);
+          identity = await identify(claimed, descriptors, parsed.data.cameraId, appearance);
         }
       }
 
@@ -179,4 +227,32 @@ export function buildOrchestrator(provider?: LlmProvider): FastifyInstance {
   });
 
   return app;
+}
+
+/**
+ * Best-effort appearance vector for a classified subject.
+ *
+ * Prefers a YOLO crop of the claimed class so the embedding focuses on the
+ * object (REMIND-style), then falls back to a full-frame embed. Failures
+ * degrade to null — attribute matching still works alone.
+ */
+async function appearanceForClassify(
+  imageBase64: string,
+  objectClass: string,
+): Promise<AppearanceEmbedding | null> {
+  if (imageBase64 === "" || !embedModelAvailable()) return null;
+  try {
+    let bbox: NormBBox | undefined;
+    if (modelAvailable()) {
+      const det = await detect(imageBase64);
+      const hit = det.objects
+        .filter((o) => o.class === objectClass)
+        .sort((a, b) => b.confidence - a.confidence)[0];
+      if (hit !== undefined) bbox = hit.bbox;
+    }
+    const result = await embed(imageBase64, bbox);
+    return result.embedding;
+  } catch {
+    return null;
+  }
 }

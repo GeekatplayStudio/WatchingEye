@@ -93,7 +93,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(req.body),
-          signal: AbortSignal.timeout(20_000),
+          signal: AbortSignal.timeout(60_000),
         },
       );
       const body = (await res.json()) as {
@@ -108,6 +108,29 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
       return reply.status(503).send({
         error:
           err instanceof Error ? `detector unreachable: ${err.message}` : "detector unreachable",
+      });
+    }
+  });
+
+  /** Relay appearance embedding; gateway hosts no AI of its own. */
+  app.post("/api/embed", async (req, reply) => {
+    try {
+      const res = await fetch(
+        `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/embed`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(req.body),
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
+      const body = await res.json();
+      if (!res.ok) return reply.status(res.status).send(body);
+      return body;
+    } catch (err) {
+      return reply.status(503).send({
+        error:
+          err instanceof Error ? `embedder unreachable: ${err.message}` : "embedder unreachable",
       });
     }
   });
@@ -224,8 +247,14 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         name: id.name,
         isNew: id.is_new,
         sightings: id.sightings,
+        quality: id.quality,
+        status: id.status,
+        ambiguous: id.ambiguous === true,
+        cameraId: id.camera_id,
+        crossedCamera: id.crossed_camera === true,
+        camerasSeen: id.cameras_seen,
       };
-      if (id.evidence !== null) {
+      if (id.evidence !== null && id.evidence !== undefined) {
         event.identity.score = id.evidence.score;
         event.identity.matched = id.evidence.matched;
       }

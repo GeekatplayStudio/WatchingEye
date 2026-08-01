@@ -63,13 +63,15 @@ clippy::float_cmp)]` — production code stays strict, tests stay readable.
 - `crates/{events,rules,guardrails,camera,motion,tracker,identity,actuator,spatial,detector}` — one concern each
 - `services/vision-engine` — desktop pipeline (axum): motion, tracking, aim, identity registry
 - `services/edge-node` — same deterministic chain, sized for Pi-class devices (tiny_http, 309 KB, no async runtime)
-- `services/agent-orchestrator` — LangGraph Super Agent (TS): VLM classification, YOLO detection via onnxruntime-node, zod guardrails
+- `services/agent-orchestrator` — LangGraph Super Agent (TS): VLM classification,
+  YOLO detection + DINOv2 appearance embed via onnxruntime-node, zod guardrails
 - `apps/gateway` — Fastify proxy, **no AI logic allowed here**
-- `apps/dashboard` — Next.js UI (the live "Console" is the primary screen)
+- `apps/dashboard` — Next.js UI (Console + Identities + Discover)
 - `edge/esp32` — firmware skeleton, separate toolchain, **no AI on device** (capture/stream only until a `no_std` port exists — see ROADMAP.md)
 
 Real-code status: the pipeline is live (not stub) — background-model motion
-detection, IoU tracking, servo aim with failsafe, deterministic identity
-matching, and YOLO11 object labelling all run today. See
+detection, IoU tracking, servo aim with failsafe, hybrid identity (VLM
+attributes ⊕ DINOv2 cosine, dual-bank memory, Hungarian batch, multi-cam
+timeline), and YOLO11 object labelling all run today. See
 `docs/architecture/overview.md` for the current data flow and ADR 0004 for
-why YOLO inference lives in the Node orchestrator rather than Rust.
+why YOLO/DINOv2 inference lives in the Node orchestrator rather than Rust.

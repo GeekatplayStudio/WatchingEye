@@ -23,13 +23,21 @@
 //!     descriptors: vec![Descriptor::new("fur_color", "brown"), Descriptor::new("breed", "shiba")],
 //!     camera_id: "driveway".into(),
 //!     at: Utc::now(),
+//!     appearance: None,
 //! });
 //! assert_eq!(outcome.name.as_deref(), Some("Mochi"));
 //! assert!(!outcome.is_new);
 //! ```
 
+pub mod appearance;
+pub mod assign;
+mod batch;
 pub mod descriptor;
 pub mod matching;
+pub mod memory;
+
+use appearance::{fuse_appearance, AppearanceVec};
+use memory::{diagnose_quality, AppearanceMemory, IdentityStatus, MatchQuality, CONFIRM_HITS};
 
 use chrono::{DateTime, Utc};
 use descriptor::Descriptor;
@@ -49,6 +57,9 @@ pub struct Sighting {
     pub camera_id: String,
     /// When it was seen.
     pub at: DateTime<Utc>,
+    /// Optional appearance embedding from a vision model.
+    #[serde(default)]
+    pub appearance: Option<AppearanceVec>,
 }
 
 /// A single entry in an identity's history.
@@ -81,6 +92,65 @@ pub struct Identity {
     pub sightings: u32,
     /// Chronological history, oldest first.
     pub memory: Vec<MemoryEntry>,
+    /// Dual-bank appearance memory, updated on match per [`MatchQuality`].
+    #[serde(default)]
+    pub appearance: Option<AppearanceMemory>,
+    /// Lifecycle stage: unconfirmed until enough sightings agree.
+    #[serde(default)]
+    pub status: IdentityStatus,
+}
+
+impl Identity {
+    /// Distinct camera ids this identity has been seen on, sorted.
+    ///
+    /// Matching is camera-agnostic by design (see [`Registry::observe`]),
+    /// so a single identity's memory can span any number of cameras; this
+    /// is how a caller discovers which ones.
+    ///
+    /// # Example
+    /// ```
+    /// use identity::{Identity, MemoryEntry};
+    /// use identity::descriptor::Descriptor;
+    /// use chrono::Utc;
+    /// use uuid::Uuid;
+    ///
+    /// let mut identity = Identity {
+    ///     id: Uuid::nil(),
+    ///     name: None,
+    ///     class: "person".into(),
+    ///     descriptors: Vec::<Descriptor>::new(),
+    ///     first_seen: Utc::now(),
+    ///     last_seen: Utc::now(),
+    ///     sightings: 2,
+    ///     memory: vec![
+    ///         MemoryEntry { at: Utc::now(), camera_id: "backyard".into(), matched: vec![] },
+    ///         MemoryEntry { at: Utc::now(), camera_id: "front".into(), matched: vec![] },
+    ///     ],
+    ///     appearance: None,
+    ///     status: identity::memory::IdentityStatus::default(),
+    /// };
+    /// assert_eq!(identity.cameras_seen(), vec!["backyard".to_string(), "front".to_string()]);
+    /// assert!(identity.is_multi_camera());
+    /// identity.memory.truncate(1);
+    /// assert!(!identity.is_multi_camera());
+    /// ```
+    #[must_use]
+    pub fn cameras_seen(&self) -> Vec<String> {
+        let mut seen: Vec<String> = Vec::new();
+        for entry in &self.memory {
+            if !seen.contains(&entry.camera_id) {
+                seen.push(entry.camera_id.clone());
+            }
+        }
+        seen.sort();
+        seen
+    }
+
+    /// True when this identity's memory mentions more than one camera.
+    #[must_use]
+    pub fn is_multi_camera(&self) -> bool {
+        self.cameras_seen().len() > 1
+    }
 }
 
 /// What the registry concluded about a sighting.
@@ -100,10 +170,43 @@ pub struct IdentificationOutcome {
     pub evidence: Option<MatchReport>,
     /// Candidates that were considered and rejected, with reasons.
     pub rejected: Vec<MatchReport>,
+    /// Confidence diagnosis for this observation. [`MatchQuality::Weak`]
+    /// when a new identity was created.
+    #[serde(default)]
+    pub quality: MatchQuality,
+    /// Lifecycle stage of the identity after this observation.
+    #[serde(default)]
+    pub status: IdentityStatus,
+    /// Convenience flag for UIs: `true` exactly when `quality` is
+    /// [`MatchQuality::Ambiguous`].
+    #[serde(default)]
+    pub ambiguous: bool,
+    /// Camera that produced this sighting.
+    #[serde(default)]
+    pub camera_id: String,
+    /// True when this match continues an identity last seen on a
+    /// *different* camera than this sighting. Always `false` when
+    /// `is_new` is `true`.
+    #[serde(default)]
+    pub crossed_camera: bool,
+    /// Distinct cameras this identity has been seen on after this
+    /// observation, sorted.
+    #[serde(default)]
+    pub cameras_seen: Vec<String>,
 }
 
 /// Maximum history entries retained per identity.
 const MAX_MEMORY: usize = 200;
+
+/// Add any observed attributes not already recorded, without overwriting
+/// what is already known.
+fn enrich_descriptors(existing: &mut Vec<Descriptor>, observed: &[Descriptor]) {
+    for observed in observed {
+        if !existing.iter().any(|k| k.key == observed.key) {
+            existing.push(observed.clone());
+        }
+    }
+}
 
 /// In-memory store of known identities.
 #[derive(Debug, Default)]
@@ -133,6 +236,8 @@ impl Registry {
                 last_seen: now,
                 sightings: 0,
                 memory: Vec::new(),
+                appearance: None,
+                status: IdentityStatus::Confirmed,
             },
         );
         id
@@ -155,18 +260,29 @@ impl Registry {
     /// Attribute a sighting to a known identity, or create a new one.
     ///
     /// Only identities of the same class are considered — a dog is never
-    /// matched against a car no matter how attributes line up.
+    /// matched against a car no matter how attributes line up. The winning
+    /// comparison (if any) is diagnosed for [`MatchQuality`] against every
+    /// candidate considered, which gates how appearance memory updates and
+    /// whether the identity's [`IdentityStatus`] advances.
     pub fn observe(&mut self, sighting: &Sighting) -> IdentificationOutcome {
         let class = sighting.class.to_ascii_lowercase();
         let mut reports: Vec<MatchReport> = self
             .identities
             .values()
             .filter(|i| i.class == class)
-            .map(|i| compare(i.id, &i.descriptors, &sighting.descriptors))
+            .map(|i| {
+                let report = compare(i.id, &i.descriptors, &sighting.descriptors);
+                fuse_appearance(report, i.appearance.as_ref(), sighting.appearance.as_ref())
+            })
             .collect();
         reports.sort_by_key(|r| r.identity_id);
 
         let winner = best_match(reports.clone());
+        let quality = diagnose_quality(winner.as_ref(), &reports);
+        let winner = winner.map(|mut w| {
+            w.quality = quality;
+            w
+        });
         let rejected: Vec<MatchReport> = reports
             .into_iter()
             .filter(|r| {
@@ -177,48 +293,94 @@ impl Registry {
             .collect();
 
         match winner {
-            Some(report) => {
-                let Some(existing) = self.identities.get_mut(&report.identity_id) else {
-                    return self.create(sighting, &class, rejected);
-                };
-                existing.last_seen = sighting.at;
-                existing.sightings += 1;
-                // Newly observed attributes enrich what we know.
-                for observed in &sighting.descriptors {
-                    if !existing.descriptors.iter().any(|k| k.key == observed.key) {
-                        existing.descriptors.push(observed.clone());
-                    }
+            Some(report) => self.record_match(sighting, report, rejected, quality),
+            None => self.create(sighting, &class, rejected, quality),
+        }
+    }
+
+    /// Update an existing identity with a sighting that matched it.
+    fn record_match(
+        &mut self,
+        sighting: &Sighting,
+        report: MatchReport,
+        rejected: Vec<MatchReport>,
+        quality: MatchQuality,
+    ) -> IdentificationOutcome {
+        let class = sighting.class.to_ascii_lowercase();
+        let Some(existing) = self.identities.get_mut(&report.identity_id) else {
+            return self.create(sighting, &class, rejected, quality);
+        };
+        existing.last_seen = sighting.at;
+        existing.sightings += 1;
+        enrich_descriptors(&mut existing.descriptors, &sighting.descriptors);
+
+        if let Some(seen_app) = &sighting.appearance {
+            match &mut existing.appearance {
+                Some(known) => known.apply_update(seen_app, quality),
+                None if quality != MatchQuality::Weak => {
+                    existing.appearance = Some(AppearanceMemory::from_observation(seen_app));
                 }
-                existing.memory.push(MemoryEntry {
-                    at: sighting.at,
-                    camera_id: sighting.camera_id.clone(),
-                    matched: report.matched.clone(),
-                });
-                if existing.memory.len() > MAX_MEMORY {
-                    existing.memory.remove(0);
-                }
-                IdentificationOutcome {
-                    identity_id: existing.id,
-                    name: existing.name.clone(),
-                    class: existing.class.clone(),
-                    is_new: false,
-                    sightings: existing.sightings,
-                    evidence: Some(report),
-                    rejected,
-                }
+                None => {}
             }
-            None => self.create(sighting, &class, rejected),
+        }
+
+        if existing.status == IdentityStatus::Tentative
+            && (quality == MatchQuality::Strong || existing.sightings >= CONFIRM_HITS)
+        {
+            existing.status = IdentityStatus::Confirmed;
+        }
+
+        // Compare against the last sighting *before* recording this one, so
+        // a same-camera repeat is never mistaken for a crossing.
+        let crossed_camera = existing
+            .memory
+            .last()
+            .is_some_and(|last| last.camera_id != sighting.camera_id);
+
+        existing.memory.push(MemoryEntry {
+            at: sighting.at,
+            camera_id: sighting.camera_id.clone(),
+            matched: report.matched.clone(),
+        });
+        if existing.memory.len() > MAX_MEMORY {
+            existing.memory.remove(0);
+        }
+
+        IdentificationOutcome {
+            identity_id: existing.id,
+            name: existing.name.clone(),
+            class: existing.class.clone(),
+            is_new: false,
+            sightings: existing.sightings,
+            evidence: Some(report),
+            rejected,
+            quality,
+            status: existing.status,
+            ambiguous: quality == MatchQuality::Ambiguous,
+            camera_id: sighting.camera_id.clone(),
+            crossed_camera,
+            cameras_seen: existing.cameras_seen(),
         }
     }
 
     /// Record a previously unseen individual.
+    ///
+    /// New identities always start [`IdentityStatus::Tentative`]; `quality`
+    /// is [`MatchQuality::Weak`] whenever this is reached from [`observe`](Self::observe)
+    /// (no winner means nothing to be confident about), but a defensive
+    /// caller-supplied value is still threaded through onto the outcome.
     fn create(
         &mut self,
         sighting: &Sighting,
         class: &str,
         rejected: Vec<MatchReport>,
+        quality: MatchQuality,
     ) -> IdentificationOutcome {
         let id = Uuid::new_v4();
+        let appearance = sighting
+            .appearance
+            .as_ref()
+            .map(AppearanceMemory::from_observation);
         self.identities.insert(
             id,
             Identity {
@@ -234,6 +396,8 @@ impl Registry {
                     camera_id: sighting.camera_id.clone(),
                     matched: Vec::new(),
                 }],
+                appearance,
+                status: IdentityStatus::Tentative,
             },
         );
         IdentificationOutcome {
@@ -244,6 +408,12 @@ impl Registry {
             sightings: 1,
             evidence: None,
             rejected,
+            quality,
+            status: IdentityStatus::Tentative,
+            ambiguous: quality == MatchQuality::Ambiguous,
+            camera_id: sighting.camera_id.clone(),
+            crossed_camera: false,
+            cameras_seen: vec![sighting.camera_id.clone()],
         }
     }
 
@@ -262,179 +432,13 @@ impl Registry {
     }
 }
 
+// Registry integration tests live in `registry_tests.rs` (and cross-camera
+// tests in `multi_camera_tests.rs`) to keep this file within the
+// workspace's per-file line budget.
 #[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
-    use super::*;
+#[path = "registry_tests.rs"]
+mod tests;
 
-    fn d(key: &str, value: &str) -> Descriptor {
-        Descriptor::new(key, value)
-    }
-
-    fn sighting(class: &str, descriptors: Vec<Descriptor>) -> Sighting {
-        Sighting {
-            class: class.into(),
-            descriptors,
-            camera_id: "driveway".into(),
-            at: Utc::now(),
-        }
-    }
-
-    #[test]
-    fn an_unknown_object_becomes_a_new_identity() {
-        let mut r = Registry::new();
-        let out = r.observe(&sighting("dog", vec![d("fur_color", "brown")]));
-        assert!(out.is_new);
-        assert_eq!(out.sightings, 1);
-        assert!(out.name.is_none());
-    }
-
-    #[test]
-    fn an_enrolled_pet_is_recognised_by_name() {
-        let mut r = Registry::new();
-        r.enroll(
-            "Mochi",
-            "dog",
-            vec![d("fur_color", "brown"), d("breed", "shiba")],
-        );
-        let out = r.observe(&sighting(
-            "dog",
-            vec![d("fur_color", "brown"), d("breed", "shiba")],
-        ));
-        assert_eq!(out.name.as_deref(), Some("Mochi"));
-        assert!(!out.is_new);
-        assert!(out.evidence.unwrap().matched.contains(&"breed".to_string()));
-    }
-
-    #[test]
-    fn a_different_dog_is_not_confused_with_the_enrolled_one() {
-        let mut r = Registry::new();
-        r.enroll(
-            "Mochi",
-            "dog",
-            vec![d("fur_color", "brown"), d("breed", "shiba")],
-        );
-        let out = r.observe(&sighting(
-            "dog",
-            vec![d("fur_color", "black"), d("breed", "labrador")],
-        ));
-        assert!(out.is_new);
-        assert!(
-            !out.rejected.is_empty(),
-            "the rejection must be recorded, not silent"
-        );
-    }
-
-    #[test]
-    fn identities_never_cross_classes() {
-        let mut r = Registry::new();
-        r.enroll("Mochi", "dog", vec![d("fur_color", "brown")]);
-        // A brown car is not the brown dog.
-        let out = r.observe(&sighting("car", vec![d("fur_color", "brown")]));
-        assert!(out.is_new);
-        assert_eq!(out.class, "car");
-        assert!(
-            out.rejected.is_empty(),
-            "other classes are not even considered"
-        );
-    }
-
-    #[test]
-    fn repeat_sightings_accumulate_memory() {
-        let mut r = Registry::new();
-        let id = r.enroll(
-            "Mochi",
-            "dog",
-            vec![d("fur_color", "brown"), d("breed", "shiba")],
-        );
-        for _ in 0..3 {
-            r.observe(&sighting(
-                "dog",
-                vec![d("fur_color", "brown"), d("breed", "shiba")],
-            ));
-        }
-        let identity = r.get(id).unwrap();
-        assert_eq!(identity.sightings, 3);
-        assert_eq!(identity.memory.len(), 3);
-        assert_eq!(identity.memory[0].camera_id, "driveway");
-    }
-
-    #[test]
-    fn new_attributes_enrich_a_known_identity() {
-        let mut r = Registry::new();
-        let id = r.enroll(
-            "Mochi",
-            "dog",
-            vec![d("fur_color", "brown"), d("breed", "shiba")],
-        );
-        r.observe(&sighting(
-            "dog",
-            vec![
-                d("fur_color", "brown"),
-                d("breed", "shiba"),
-                d("accessory", "red_collar"),
-            ],
-        ));
-        let identity = r.get(id).unwrap();
-        assert!(identity.descriptors.iter().any(|x| x.key == "accessory"));
-    }
-
-    #[test]
-    fn a_vehicle_is_identified_by_its_plate_across_sightings() {
-        let mut r = Registry::new();
-        let first = r.observe(&sighting(
-            "car",
-            vec![d("license_plate", "123ABC"), d("vehicle_color", "green")],
-        ));
-        // Seen again in different light, colour reported differently.
-        let second = r.observe(&sighting(
-            "car",
-            vec![d("license_plate", "123abc"), d("vehicle_color", "grey")],
-        ));
-        assert_eq!(first.identity_id, second.identity_id);
-        assert!(!second.is_new);
-    }
-
-    #[test]
-    fn a_different_plate_creates_a_separate_vehicle() {
-        let mut r = Registry::new();
-        r.observe(&sighting(
-            "car",
-            vec![d("license_plate", "123ABC"), d("vehicle_make", "subaru")],
-        ));
-        let other = r.observe(&sighting(
-            "car",
-            vec![d("license_plate", "999XYZ"), d("vehicle_make", "subaru")],
-        ));
-        assert!(other.is_new);
-        assert_eq!(
-            other.rejected[0].refuted_by.as_deref(),
-            Some("license_plate"),
-            "the reason for treating it as a different car must be explicit"
-        );
-    }
-
-    #[test]
-    fn an_auto_discovered_identity_can_be_named_later() {
-        let mut r = Registry::new();
-        let out = r.observe(&sighting("dog", vec![d("fur_color", "brown")]));
-        assert!(r.name_identity(out.identity_id, "Rex"));
-        assert_eq!(r.get(out.identity_id).unwrap().name.as_deref(), Some("Rex"));
-    }
-
-    #[test]
-    fn naming_an_unknown_identity_fails() {
-        let mut r = Registry::new();
-        assert!(!r.name_identity(Uuid::new_v4(), "Ghost"));
-    }
-
-    #[test]
-    fn listing_is_ordered_by_most_recently_seen() {
-        let mut r = Registry::new();
-        r.observe(&sighting("dog", vec![d("fur_color", "brown")]));
-        let mut later = sighting("car", vec![d("license_plate", "111AAA")]);
-        later.at = Utc::now() + chrono::Duration::seconds(60);
-        r.observe(&later);
-        assert_eq!(r.all()[0].class, "car");
-    }
-}
+#[cfg(test)]
+#[path = "multi_camera_tests.rs"]
+mod multi_camera_tests;

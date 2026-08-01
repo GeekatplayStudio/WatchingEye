@@ -9,6 +9,7 @@
 //! so any identification can be argued with.
 
 use crate::descriptor::{strength_of, Descriptor, Strength};
+use crate::memory::MatchQuality;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -28,6 +29,13 @@ pub struct MatchReport {
     pub conflicting: Vec<String>,
     /// Set when a distinctive attribute ruled the candidate out.
     pub refuted_by: Option<String>,
+    /// Cosine similarity of appearance embeddings, when both sides had one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appearance_score: Option<f32>,
+    /// Confidence diagnosis, filled in by [`crate::memory::diagnose_quality`]
+    /// for the winning report. Defaults to [`MatchQuality::Weak`] until then.
+    #[serde(default)]
+    pub quality: MatchQuality,
 }
 
 impl MatchReport {
@@ -92,6 +100,8 @@ pub fn compare(identity_id: Uuid, known: &[Descriptor], seen: &[Descriptor]) -> 
         matched,
         conflicting,
         refuted_by,
+        appearance_score: None,
+        quality: MatchQuality::default(),
     }
 }
 
@@ -199,6 +209,8 @@ mod tests {
             matched: vec!["fur_color".into()],
             conflicting: vec![],
             refuted_by: None,
+            appearance_score: None,
+            quality: MatchQuality::default(),
         };
         let strong = MatchReport {
             identity_id: Uuid::from_u128(2),
@@ -206,6 +218,8 @@ mod tests {
             matched: vec!["fur_color".into(), "breed".into()],
             conflicting: vec![],
             refuted_by: None,
+            appearance_score: None,
+            quality: MatchQuality::default(),
         };
         let best = best_match(vec![weak, strong]).unwrap();
         assert_eq!(best.identity_id, Uuid::from_u128(2));
@@ -219,6 +233,8 @@ mod tests {
             matched: vec![],
             conflicting: vec!["fur_color".into()],
             refuted_by: None,
+            appearance_score: None,
+            quality: MatchQuality::default(),
         };
         assert!(best_match(vec![poor]).is_none());
     }
@@ -231,6 +247,8 @@ mod tests {
             matched: vec!["vehicle_make".into()],
             conflicting: vec!["license_plate".into()],
             refuted_by: Some("license_plate".into()),
+            appearance_score: None,
+            quality: MatchQuality::default(),
         };
         assert!(best_match(vec![refuted]).is_none());
     }

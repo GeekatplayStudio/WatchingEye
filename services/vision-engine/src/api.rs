@@ -64,8 +64,10 @@ pub fn router(engine: SharedEngine, registry: SharedRegistry, gateway_url: Strin
 
     let identities = Router::new()
         .route("/api/identify", post(identify::identify))
+        .route("/api/identify/batch", post(identify::identify_batch))
         .route("/api/identities", get(identify::list_identities))
         .route("/api/identities/name", post(identify::name_identity))
+        .route("/api/identities/{id}", get(identify::get_identity))
         .with_state(registry);
 
     frames

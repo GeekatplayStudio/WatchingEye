@@ -16,12 +16,15 @@ flowchart TD
     GATE -- open --> VLM[Super Agent<br/>Ollama qwen2.5vl via LangGraph]
     VLM --> GR[Guardrails<br/>schema → range → confidence → policy → safety]
     GR -- reject --> SAFE[Safe default + logged reason]
-    GR -- pass --> ID[Identity Registry<br/>deterministic re-identification]
+    GR -- pass --> ID[Identity Registry<br/>attrs + appearance cosine]
     ID --> RE[Rule Engine<br/>IF/AND/THEN]
     RE --> ACT[Actions / Notifications]
 
     C -.->|full snapshot, ~1.2s cadence| YOLO[YOLO11 ONNX<br/>stationary-object labelling]
     YOLO --> DIST[Distance Estimate<br/>spatial::distance — pinhole model]
+    YOLO -.->|crop| DINO[DINOv2 ONNX<br/>appearance embedding]
+    DINO -.-> ID
+    ID -.->|same UUID across cameras| MC[Multi-cam timeline]
 
     ACT --> GW[Node Gateway]
     GR --> GW
@@ -33,7 +36,11 @@ Two independent paths run over the same camera feed:
   tracking → heading/aim/gate. Fast, blind to anything not moving.
 - **Detection path** (YOLO, ~1.2s cadence): full-frame labelling, so a
   parked car or seated person still gets a name. See ADR 0004 for why this
-  runs in the Node orchestrator rather than Rust today.
+  runs in the Node orchestrator rather than Rust today. YOLO crops also feed
+  DINOv2 appearance embeddings into the identity registry (hybrid attrs +
+  cosine), without touching the motion path. Multi-object frames can opt into
+  Hungarian batch assignment (`identify: true` on `/detect`) so two similar
+  subjects cannot claim the same identity.
 
 The Super Agent (VLM classification) only runs when the motion path's gate
 opens — never continuously, never per frame.
@@ -87,7 +94,7 @@ camera, motion, tracker, actuator, spatial ← services/edge-node
 | `camera` | `CameraSource` trait — one interface, many backends |
 | `motion` | Background-model motion detection + connected-component blob extraction |
 | `tracker` | IoU-based association, `TriggerGate`, object timelines |
-| `identity` | Deterministic re-identification (weighted attribute matching, never a model) |
+| `identity` | Deterministic re-identification: weighted attributes + optional appearance cosine (DINOv2); never an LLM |
 | `actuator` | Pan/tilt servo control: limits, rate limiting, deadband, failsafe |
 | `spatial` | Motion heading/speed + monocular distance estimation |
 | `detector` | `Detector` trait (target interface; current YOLO lives in the orchestrator, see ADR 0004) |
@@ -101,5 +108,7 @@ camera, motion, tracker, actuator, spatial ← services/edge-node
   (order matters; document it) and mirror in
   `services/agent-orchestrator/src/screen.ts`
 - New identity attribute → `identity::descriptor::strength_of` classification
+- Appearance embed / ReID → orchestrator `embed.ts` + `identity` dual-bank memory
+  (never on the motion path); batch assign via `observe_batch`
 - New servo axis or animatronic behavior → `crates/actuator`
 - MCP servers wrap each subsystem at the service boundary (`packages/mcp-server`)

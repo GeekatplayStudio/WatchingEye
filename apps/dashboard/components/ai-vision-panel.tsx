@@ -110,11 +110,28 @@ export function AiVisionPanel({
             {latest.identity !== undefined && (
               <p className="inline-flex items-center gap-1.5 text-xs">
                 <Fingerprint className="h-3.5 w-3.5 text-muted-foreground" />
-                {latest.identity.isNew ? (
-                  <span className="text-muted-foreground">First time I have seen this one.</span>
+                {latest.identity.ambiguous === true ? (
+                  <span className="text-muted-foreground">
+                    Ambiguous match — holding appearance memory steady.
+                  </span>
+                ) : latest.identity.isNew ? (
+                  <span className="text-muted-foreground">
+                    First time I have seen this one
+                    {latest.identity.status === "tentative" ? " (tentative)" : ""}.
+                  </span>
+                ) : latest.identity.crossedCamera === true ? (
+                  <span className="text-primary">
+                    Same individual — crossed from another camera
+                    {latest.identity.camerasSeen !== undefined &&
+                    latest.identity.camerasSeen.length > 0
+                      ? ` (${latest.identity.camerasSeen.join(" → ")})`
+                      : ""}
+                    .
+                  </span>
                 ) : (
                   <span className="text-primary">
                     Seen {latest.identity.sightings} times before
+                    {latest.identity.status === "tentative" ? " (tentative)" : ""}
                     {latest.identity.matched !== undefined && latest.identity.matched.length > 0
                       ? ` — recognized by ${latest.identity.matched
                           .join(", ")

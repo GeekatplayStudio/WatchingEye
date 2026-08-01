@@ -108,6 +108,12 @@ export interface IdentityInfo {
   sightings: number;
   score?: number;
   matched?: string[];
+  quality?: "strong" | "ambiguous" | "weak";
+  status?: "tentative" | "confirmed";
+  ambiguous?: boolean;
+  cameraId?: string;
+  crossedCamera?: boolean;
+  camerasSeen?: string[];
 }
 
 /** A classification the guardrails accepted (or explicitly refused). */

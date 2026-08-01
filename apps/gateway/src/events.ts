@@ -52,6 +52,18 @@ export interface DetectionEvent {
     sightings: number;
     score?: number;
     matched?: string[];
+    /** REMIND-style match confidence. */
+    quality?: "strong" | "ambiguous" | "weak";
+    /** Lifecycle: tentative until corroborated. */
+    status?: "tentative" | "confirmed";
+    /** True when two candidates scored nearly alike. */
+    ambiguous?: boolean;
+    /** Camera that produced this sighting. */
+    cameraId?: string;
+    /** True when continuing an identity last seen on another camera. */
+    crossedCamera?: boolean;
+    /** Distinct cameras this identity has been seen on. */
+    camerasSeen?: string[];
   };
   /** Always "engine": events only originate from the real pipeline. */
   source: "engine";

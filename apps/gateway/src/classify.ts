@@ -35,7 +35,15 @@ export interface IdentityOutcome {
     matched: string[];
     conflicting: string[];
     refuted_by: string | null;
+    appearance_score?: number | null;
+    quality?: "strong" | "ambiguous" | "weak";
   } | null;
+  quality?: "strong" | "ambiguous" | "weak";
+  status?: "tentative" | "confirmed";
+  ambiguous?: boolean;
+  camera_id?: string;
+  crossed_camera?: boolean;
+  cameras_seen?: string[];
   unavailableReason?: string;
 }
 

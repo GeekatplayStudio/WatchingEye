@@ -3,13 +3,14 @@
 /** Left navigation rail: monospace labels, amber marker on the active route. */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Eye, Settings2, GitBranch, Mic, Camera, BookOpen, Radar } from "lucide-react";
+import { Activity, Eye, Settings2, GitBranch, Mic, Camera, BookOpen, Radar, Fingerprint } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/cameras", label: "Console", icon: Camera },
   { href: "/discover", label: "Discover", icon: Radar },
   { href: "/", label: "Events", icon: Activity },
+  { href: "/identities", label: "Identities", icon: Fingerprint },
   { href: "/tuning", label: "Policy", icon: Settings2 },
   { href: "/pipeline", label: "Pipeline", icon: GitBranch },
   { href: "/voice", label: "Voice", icon: Mic },

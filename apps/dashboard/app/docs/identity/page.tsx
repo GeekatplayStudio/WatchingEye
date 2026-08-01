@@ -63,6 +63,30 @@ export default function IdentityDocs() {
         like <em>matched: breed, fur colour</em> — and disagree with it.
       </DocSection>
 
+      <DocSection title="Multi-camera">
+        Matching is deliberately camera-agnostic: the same appearance embedding or
+        distinctive attribute on <code>front</code> and later <code>backyard</code> keeps
+        one UUID. The outcome flags <code>crossed_camera</code> when the previous sighting
+        was on a different camera. Open the <code>/identities</code> page to browse the
+        gallery and a per-camera timeline for any UUID.
+      </DocSection>
+
+      <DocSection title="Appearance memory (hybrid ReID)">
+        Alongside text descriptors, a frozen DINOv2 embedding can be attached to a
+        sighting. Matching then blends attribute agreement with cosine similarity —
+        still deterministic arithmetic in Rust, still auditable. Distinctive conflicts
+        (different plate) refute even a perfect appearance score.
+        <p>
+          Each identity keeps a <strong>dual-bank</strong> appearance memory: a{" "}
+          <code>work</code> bank that absorbs trustworthy updates, and a{" "}
+          <code>stable</code> bank promoted only after enough strong observations.
+          Match quality is diagnosed as strong, ambiguous, or weak; ambiguous and weak
+          matches do not drag the stored appearance off-course. New identities start{" "}
+          <em>tentative</em> and become <em>confirmed</em> after strong or repeated
+          sightings.
+        </p>
+      </DocSection>
+
       <DocSection title="Object memory">
         Each identity keeps a timeline: when it was seen, on which camera, and what matched
         that time. That history is what makes questions like &ldquo;who was at the door
@@ -70,11 +94,10 @@ export default function IdentityDocs() {
       </DocSection>
 
       <DocSection title="Honest limits">
-        Identity here is only as good as the descriptors a vision model reports, and models
-        describe clothing far better than faces. Two people in similar jackets can merge;
-        the same person in a different coat can split into two identities. There is no face
-        recognition and no biometric matching — deliberately. Treat identity as a strong hint
-        backed by stated evidence, not as proof of who someone is.
+        Identity here combines model-reported descriptors with appearance embeddings.
+        Two people in similar jackets can still merge; clothing changes can still split.
+        There is no face recognition and no biometric matching — deliberately. Treat
+        identity as a strong hint backed by stated evidence, not as proof of who someone is.
       </DocSection>
     </DocShell>
   );
