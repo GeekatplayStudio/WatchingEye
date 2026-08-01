@@ -20,7 +20,7 @@ done (exceptions require an ADR).
 | Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (best ~3.9 s `llava`) |
 | Phase 3 Multi-cam / edge | **3.2–3.5** ✅ (ESP32 firmware pending hardware); MCP Camera/Timeline/Alert ✅ |
 | Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
-| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice STT/TTS/ask-text partial; live mic open) |
+| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice STT/TTS/ask/PTT ✅; audio-events open) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
 Durable multi-cam config + 4 synthetic pumps proven; live IP farms, firmware,
@@ -37,7 +37,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 | P2 | **3.2** edge offline cache | Pi CI + SQLite gate-open cache + hub sync ✅; not a live-Pi smoke |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
 | P2 | **3.4** Split MCP | Camera / Timeline / Alert bins + client demo ✅ (read-only; no actuation) |
-| P2 | **V.1 / V.2** Voice | STT/TTS/ask-text ✅; audio-events + live mic duplex open |
+| P2 | **V.1 / V.2** Voice | STT/TTS/ask/PTT duplex ✅; audio-events + always-on open |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
@@ -301,7 +301,9 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
 - [x] Two-way RAG ask/answer (**text path**) — gateway `POST /api/voice/ask`:
       `query_events` → dataset recall → `SpokenFact[]` → speak; citations
       returned for UI; recall prose never fed to TTS; Voice ask panel
-- [ ] Voice page live mic duplex loop
+- [x] Voice page live mic duplex loop — push-to-talk `MediaRecorder` →
+      `/api/voice/ask` or `/api/voice/command` (audioBase64) → play speak WAV;
+      not always-on / no wake-word / no audio-event detector
 
 ---
 
@@ -407,9 +409,10 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 27. ~~**3.4 Split MCP** — Camera / Timeline / Alert + client demo~~ ✅
 28. ~~**V.1 Whisper STT → parse** — stub/cli + gateway proxy + Voice panel~~ ✅ (audio-events still open)
 29. ~~**V.2 Piper/stub TTS** — facts→speak route + Voice panel~~ ✅
-30. ~~**V.2 ask text path** — query_events → recall → speak~~ ✅ (live mic still open)
-31. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
-32. **2.1 Rust LLM** / **V.1 audio-events** / **V.2 live mic duplex** — next cliffs
+30. ~~**V.2 ask text path** — query_events → recall → speak~~ ✅
+31. ~~**V.2 live mic PTT duplex** — MediaRecorder → ask/command → play~~ ✅ (always-on still open)
+32. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
+33. **2.1 Rust LLM** / **V.1 audio-events** — next cliffs
 
 ---
 

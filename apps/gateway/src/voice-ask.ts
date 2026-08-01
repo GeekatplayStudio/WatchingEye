@@ -110,40 +110,59 @@ export interface VoiceAskResult {
   latencyMs: number;
 }
 
+/** Input for one ask attempt (text and/or mic audio). */
+export interface VoiceAskInput {
+  transcript?: string;
+  audioBase64?: string;
+  mimeType?: string;
+}
+
 /**
  * Parse → recall in window → speak facts only.
+ *
+ * Prefer `transcript` when known; otherwise pass `audioBase64` so `parse`
+ * runs STT once (push-to-talk duplex).
  *
  * @example
  * ```ts
  * const r = await runVoiceAsk({
- *   transcript: "what happened today",
- *   parse: async (t) => voiceCommand({ transcript: t }),
+ *   input: { transcript: "what happened today" },
+ *   parse: async (i) => voiceCommand(i),
  *   getRecords: () => datasetStore.getAll(500),
  *   speak: async (facts) => voiceSpeak({ facts }),
  * });
  * ```
  */
 export async function runVoiceAsk(opts: {
-  transcript: string;
-  parse: (transcript: string) => Promise<VoiceParseResult>;
+  input: VoiceAskInput;
+  parse: (input: VoiceAskInput) => Promise<VoiceParseResult>;
   getRecords: () => Promise<DatasetRecord[]>;
   speak: (facts: SpokenFact[]) => Promise<VoiceSpeakResult>;
   now?: Date;
   recallLimit?: number;
 }): Promise<VoiceAskResult> {
   const started = Date.now();
-  const transcript = opts.transcript.trim();
-  if (transcript === "") {
+  const transcript = opts.input.transcript?.trim() ?? "";
+  const hasAudio =
+    typeof opts.input.audioBase64 === "string" && opts.input.audioBase64.length > 0;
+  if (transcript === "" && !hasAudio) {
     return {
       outcome: "rejected",
       transcript: "",
       command: null,
-      rejectedReason: "transcript is required",
+      rejectedReason: "transcript or audioBase64 is required",
       latencyMs: Date.now() - started,
     };
   }
 
-  const parsed = await opts.parse(transcript);
+  const parseIn: VoiceAskInput = {};
+  if (transcript !== "") parseIn.transcript = transcript;
+  const audio = opts.input.audioBase64;
+  if (hasAudio && typeof audio === "string") {
+    parseIn.audioBase64 = audio;
+    if (typeof opts.input.mimeType === "string") parseIn.mimeType = opts.input.mimeType;
+  }
+  const parsed = await opts.parse(parseIn);
   if (parsed.outcome === "rejected" || parsed.command === null) {
     return {
       outcome: "rejected",

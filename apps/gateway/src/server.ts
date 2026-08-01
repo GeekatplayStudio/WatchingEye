@@ -493,19 +493,37 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   });
 
   /**
-   * Text-path ask: parse query_events → dataset recall → speak facts.
-   * No live mic; free-form recall prose is never sent to TTS.
+   * Ask loop: parse query_events → dataset recall → speak facts.
+   * Accepts transcript and/or mic `audioBase64` (push-to-talk).
+   * Free-form recall prose is never sent to TTS.
    */
   app.post("/api/voice/ask", async (req, reply) => {
-    const body = req.body as { transcript?: string };
-    if (typeof body?.transcript !== "string" || body.transcript.trim() === "") {
-      return reply.status(400).send({ error: "transcript is required" });
+    const body = req.body as {
+      transcript?: string;
+      audioBase64?: string;
+      mimeType?: string;
+    };
+    const hasText = typeof body?.transcript === "string" && body.transcript.trim() !== "";
+    const hasAudio = typeof body?.audioBase64 === "string" && body.audioBase64.length > 0;
+    if (!hasText && !hasAudio) {
+      return reply.status(400).send({ error: "transcript or audioBase64 is required" });
     }
     try {
+      const input: {
+        transcript?: string;
+        audioBase64?: string;
+        mimeType?: string;
+      } = {};
+      if (hasText && typeof body.transcript === "string") {
+        input.transcript = body.transcript.trim();
+      }
+      if (hasAudio && typeof body.audioBase64 === "string") {
+        input.audioBase64 = body.audioBase64;
+        if (typeof body.mimeType === "string") input.mimeType = body.mimeType;
+      }
       const result = await runVoiceAsk({
-        transcript: body.transcript,
-        parse: async (transcript) =>
-          (await voiceCommand({ transcript })) as VoiceParseResult,
+        input,
+        parse: async (parseIn) => (await voiceCommand(parseIn)) as VoiceParseResult,
         getRecords: () => datasetStore.getAll(500),
         speak: async (facts) => voiceSpeak({ facts }),
       });

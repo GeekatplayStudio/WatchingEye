@@ -106,6 +106,15 @@ describe("gateway server", () => {
     expect(res.json().outcome).toBe("answered");
     expect(res.json().recall.citations).toContain("ask-1");
     expect(res.json().speak.tts.model).toBe("stub");
+
+    const mic = await app.inject({
+      method: "POST",
+      url: "/api/voice/ask",
+      payload: { audioBase64: "ZmFrZS1hdWRpbw==", mimeType: "audio/webm" },
+    });
+    expect(mic.statusCode).toBe(200);
+    expect(mic.json().outcome).toBe("answered");
+
     globalDatasetStore.clear();
     await app.close();
   });

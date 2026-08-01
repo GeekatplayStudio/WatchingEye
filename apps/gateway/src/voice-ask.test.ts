@@ -54,11 +54,11 @@ describe("recordsToSpokenFacts", () => {
 describe("runVoiceAsk", () => {
   it("answers a query_events transcript with citations and spoken facts", async () => {
     const r = await runVoiceAsk({
-      transcript: "what happened today",
+      input: { transcript: "what happened today" },
       now: new Date("2026-08-01T15:00:00.000Z"),
-      parse: async (transcript) => ({
+      parse: async (input) => ({
         outcome: "command",
-        transcript,
+        transcript: input.transcript ?? "",
         command: { intent: "query_events", window: "today" },
         stt: { model: "stub" },
       }),
@@ -80,12 +80,41 @@ describe("runVoiceAsk", () => {
     expect(r.speak?.tts?.model).toBe("stub");
   });
 
+  it("accepts mic audio and STTs once via parse", async () => {
+    const r = await runVoiceAsk({
+      input: { audioBase64: "ZmFrZQ==", mimeType: "audio/webm" },
+      now: new Date("2026-08-01T15:00:00.000Z"),
+      parse: async (input) => {
+        expect(input.audioBase64).toBe("ZmFrZQ==");
+        return {
+          outcome: "command",
+          transcript: "what happened today",
+          command: { intent: "query_events", window: "today" },
+          stt: { model: "stub" },
+        };
+      },
+      getRecords: async () => [
+        record({ id: "mic", timestamp: "2026-08-01T14:00:00.000Z", class: "dog" }),
+      ],
+      speak: async () => ({
+        outcome: "spoken",
+        speechText: "Detected dog at the yard.",
+        audioBase64: "UkZGRg==",
+        mimeType: "audio/wav",
+        tts: { model: "stub" },
+      }),
+    });
+    expect(r.outcome).toBe("answered");
+    expect(r.transcript).toBe("what happened today");
+    expect(r.recall?.citations).toEqual(["mic"]);
+  });
+
   it("rejects non-history intents", async () => {
     const r = await runVoiceAsk({
-      transcript: "arm the system",
-      parse: async (transcript) => ({
+      input: { transcript: "arm the system" },
+      parse: async (input) => ({
         outcome: "command",
-        transcript,
+        transcript: input.transcript ?? "",
         command: { intent: "set_mode", mode: "armed" },
       }),
       getRecords: async () => [],
