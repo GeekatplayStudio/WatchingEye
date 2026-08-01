@@ -90,7 +90,29 @@ struct Health {
 /// (and its durable store). `gateway_url` is where network cameras POST
 /// classify requests on a trigger — see [`crate::rtsp`].
 pub fn router(frames: FrameState, identity_state: IdentityState, gateway_url: String) -> Router {
-    let rtsp = crate::rtsp::router(frames.clone(), gateway_url);
+    let camera_store = match crate::camera_store::CameraStore::open(
+        crate::camera_store::CameraStore::default_path(),
+    ) {
+        Ok(store) => {
+            tracing::info!("opened durable camera store");
+            std::sync::Arc::new(store)
+        }
+        Err(err) => {
+            tracing::warn!(
+                %err,
+                "failed to open camera database; falling back to in-memory (cameras will not persist)"
+            );
+            match crate::camera_store::CameraStore::open_in_memory() {
+                Ok(store) => std::sync::Arc::new(store),
+                Err(mem_err) => {
+                    // SQLite cannot allocate even an in-memory DB — fatal at boot.
+                    tracing::error!(%mem_err, "in-memory camera store failed");
+                    std::process::exit(1);
+                }
+            }
+        }
+    };
+    let rtsp = crate::rtsp::router(frames.clone(), gateway_url, camera_store);
 
     let frame_routes = Router::new()
         .route("/health", get(health))

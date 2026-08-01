@@ -11,6 +11,7 @@
 mod api;
 mod bind;
 mod cameras_api;
+mod camera_store;
 mod cli;
 mod config;
 mod engine;
@@ -18,6 +19,8 @@ mod engine;
 mod engine_soak;
 #[cfg(test)]
 mod engine_motion_soak;
+#[cfg(test)]
+mod rtsp_scale;
 mod file_pump;
 #[cfg(test)]
 mod fixture_streams;
@@ -31,6 +34,7 @@ mod pipeline;
 mod motion_detector_gate;
 mod reolink_client;
 mod rtsp;
+mod rtsp_capture;
 mod rule_set;
 mod scan_jobs;
 mod usb_pump;

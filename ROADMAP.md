@@ -18,12 +18,13 @@ done (exceptions require an ADR).
 | Phase 0 Foundation | ✅ done |
 | Phase 1 Edge detection | ✅ **1.1–1.5 done** (identities + pipeline events in SQLite) |
 | Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (~4.6 s) |
-| Phase 3 Multi-cam / edge | **3.5 ReID** ✅; RTSP/MCP/Pi/ESP32 still partial or skipped |
+| Phase 3 Multi-cam / edge | **3.3 + 3.5** ✅; Pi CI / ESP32 / split MCP still open |
 | Phase 6 NL + vector dataset | **6.1, 6.2, 6.4, 6.5** ✅; **6.3** missing CLIP attr vectors column |
 | Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice contracts only) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
-Scale, firmware, voice TTS, and sub-300 ms VLM are the big remaining cliffs.
+Durable multi-cam config + 4 synthetic pumps proven; live IP farms, firmware,
+voice TTS, and sub-300 ms VLM remain the cliffs.
 
 ---
 
@@ -32,7 +33,6 @@ Scale, firmware, voice TTS, and sub-300 ms VLM are the big remaining cliffs.
 | Priority | Item | Gap |
 |----------|------|-----|
 | P1 | **2.2** VLM &lt;300 ms | Measured miss on RTX 3090 + qwen2.5vl:7b (~4.6 s p95) |
-| P1 | **3.3** RTSP scale | Connect works; not proven at 4 simultaneous streams + durable cam config |
 | P2 | **6.3** CLIP attr vectors | `clip_embedding` for search ✅; separate open-vocab attr vectors still open |
 | P2 | **2.1** Rust LLM provider | Orchestrator TS only |
 | P2 | **3.2 / A.2b** Pi CI | `edge-node` binary exists; no Pi cross-compile gate |
@@ -201,9 +201,14 @@ Scale, firmware, voice TTS, and sub-300 ms VLM are the big remaining cliffs.
 - [x] `edge-node` binary (~309 KB) wire-compatible with vision-engine
 - [ ] Pi cross-compile in CI; offline SQLite cache + sync-on-reconnect
 
-### Step 3.3 — RTSP/IP camera backend (in progress)
+### Step 3.3 — RTSP/IP camera backend ✅
 - [x] RTSP connect/disconnect + Discover UI; frames into the real pipeline
-- [ ] Exit: 4 simultaneous RTSP streams proven; durable per-camera config store
+- [x] Durable per-camera config — `camera_store.rs` SQLite
+      (`data/cameras.sqlite` / `WATCHINGEYE_CAMERA_DB`); upsert on connect,
+      delete on disconnect; restore-enabled on engine start
+- [x] Four simultaneous streams proven — `rtsp_scale.rs` runs 4 concurrent
+      synthetic gray-grid pumps into the shared `Engine` (same path RTSP
+      uses after ffmpeg decode); not a live IP-camera farm claim
 
 ### Step 3.4 — MCP servers (partial)
 - [x] Single read-only MCP baseline (2.0)
@@ -358,7 +363,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 18. ~~**1.2 motion soak** — 1000-frame static → zero detector invocations~~ ✅
 19. ~~**1.3** — Rust YOLO (`ort` feature) + detect &lt;100 ms recorded~~ ✅
 20. ~~**1.5 event SQLite** — gateway `SqliteEventStore` without Postgres~~ ✅
-21. **3.3 RTSP scale** / **2.2 faster VLM** ← opportunistic next
+21. ~~**3.3 RTSP scale** — durable camera SQLite + 4-pump soak~~ ✅
+22. **2.2 faster VLM** / Pi CI / ESP32 ← opportunistic next
 
 ---
 

@@ -13,40 +13,28 @@
 //! already handles it correctly, and it is already a dependency of this
 //! project's toolchain.
 
-use crate::api::{process_frame, FrameRequest, FrameState};
+use crate::api::FrameState;
+use crate::camera_store::{CameraRecord, CameraStore};
 use crate::cameras_api::{base64, fail};
 use crate::engine::FrameOutcome;
+use crate::rtsp_capture;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::process::Stdio;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use tokio::io::AsyncReadExt;
-use tokio::process::Command;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
-use uuid::Uuid;
 
 /// Sample grid sent into the engine. Matches the browser's `GRID_WIDTH`/
-/// `GRID_HEIGHT` in `use-webcam-pipeline.ts` — the engine's motion and
-/// tracking thresholds are tuned against this resolution, so drifting from
-/// it here would silently change detection behaviour between camera types.
-const GRID_WIDTH: u32 = 96;
-const GRID_HEIGHT: u32 = 72;
-
-/// Frames per second requested from ffmpeg's decode. The trigger gate needs
-/// several consecutive frames, not a high frame rate; this keeps CPU and
-/// pipe throughput modest on a machine running several camera feeds.
-const CAPTURE_FPS: u32 = 8;
-
-/// Width of the JPEG grabbed for classification, matching the browser's
-/// `grabSnapshot`.
-const SNAPSHOT_WIDTH: u32 = 640;
+/// `GRID_HEIGHT` in `use-webcam-pipeline.ts`.
+pub(crate) const GRID_WIDTH: u32 = 96;
+/// See [`GRID_WIDTH`].
+pub(crate) const GRID_HEIGHT: u32 = 72;
 
 /// One camera's ffmpeg process and the credentials needed to reconnect it.
 struct CameraTask {
@@ -58,32 +46,46 @@ struct CameraTask {
 
 /// The last frame decoded from a camera, held for the dashboard to poll.
 #[derive(Clone)]
-struct LatestFrame {
-    outcome: FrameOutcome,
-    width: u32,
-    height: u32,
-    samples: Vec<u8>,
+pub(crate) struct LatestFrame {
+    pub(crate) outcome: FrameOutcome,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) samples: Vec<u8>,
 }
 
 /// Shared state for the RTSP router.
 #[derive(Clone)]
-pub struct RtspState {
-    frames: FrameState,
+pub(crate) struct RtspState {
+    pub(crate) frames: FrameState,
     tasks: Arc<Mutex<HashMap<String, CameraTask>>>,
-    latest: Arc<Mutex<HashMap<String, LatestFrame>>>,
+    pub(crate) latest: Arc<Mutex<HashMap<String, LatestFrame>>>,
     /// Base URL of the gateway, for posting classify requests on a trigger.
-    gateway_url: String,
+    pub(crate) gateway_url: String,
+    /// Durable camera config (restart restore).
+    store: Arc<CameraStore>,
+}
+
+impl RtspState {
+    /// Drop a finished capture task from the connected map (stream ended).
+    pub(crate) fn forget_task(&self, camera_id: &str) {
+        lock(&self.tasks).remove(camera_id);
+    }
 }
 
 /// Build the router. `gateway_url` is where triggered objects get `POST`ed
 /// for classification — the same endpoint the browser's capture loop calls.
-pub fn router(frames: FrameState, gateway_url: String) -> Router {
+///
+/// Enabled cameras from `store` are re-spawned immediately so a restart
+/// resumes prior RTSP ingest without rediscovering.
+pub fn router(frames: FrameState, gateway_url: String, store: Arc<CameraStore>) -> Router {
     let state = RtspState {
         frames,
         tasks: Arc::new(Mutex::new(HashMap::new())),
         latest: Arc::new(Mutex::new(HashMap::new())),
         gateway_url,
+        store,
     };
+    restore_enabled(&state);
     Router::new()
         .route("/api/cameras/rtsp/connect", post(connect))
         .route("/api/cameras/rtsp/disconnect", post(disconnect))
@@ -92,9 +94,58 @@ pub fn router(frames: FrameState, gateway_url: String) -> Router {
         .with_state(state)
 }
 
+/// Re-spawn ffmpeg loops for every enabled row in the camera store.
+fn restore_enabled(state: &RtspState) {
+    let cameras = match state.store.list_enabled() {
+        Ok(rows) => rows,
+        Err(err) => {
+            warn!(%err, "could not load saved cameras; starting with none");
+            return;
+        }
+    };
+    for cam in cameras {
+        info!(
+            camera_id = %cam.camera_id,
+            url = %cam.url_redacted,
+            "restoring saved RTSP camera"
+        );
+        start_camera(state, cam.camera_id, cam.url, false);
+    }
+}
+
+/// Start (or replace) a capture task; optionally persist to the store.
+fn start_camera(state: &RtspState, camera_id: String, url: String, persist: bool) {
+    stop_task(state, &camera_id);
+    let redacted_url = redact_rtsp_url(&url);
+    if persist {
+        let record = CameraRecord {
+            camera_id: camera_id.clone(),
+            url: url.clone(),
+            url_redacted: redacted_url.clone(),
+            enabled: true,
+            updated_at: Utc::now(),
+        };
+        if let Err(err) = state.store.upsert(&record) {
+            warn!(camera_id = %camera_id, %err, "failed to persist camera config");
+        }
+    }
+    let handle = tokio::spawn(rtsp_capture::capture_loop(
+        state.clone(),
+        camera_id.clone(),
+        url,
+    ));
+    lock(&state.tasks).insert(
+        camera_id,
+        CameraTask {
+            handle,
+            redacted_url,
+        },
+    );
+}
+
 /// Take the lock, surviving a poisoned mutex — one camera task panicking
 /// must not disable the others.
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     match m.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -102,11 +153,6 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// Remove the `user:password@` portion of an RTSP URL.
-///
-/// The URL a camera is connected with is echoed back through `/status` for
-/// the operator to confirm which stream is live; the password that was
-/// typed into the credential form must not travel any further than the one
-/// request that used it.
 ///
 /// @example
 /// ```ignore
@@ -123,33 +169,6 @@ fn redact_rtsp_url(url: &str) -> String {
     }
 }
 
-/// Body of the classify request this module sends to the gateway.
-///
-/// Field values are fixed to match exactly what the browser's
-/// `classifyObject` sends: `class` and `confidence` are placeholders the
-/// VLM overwrites, `frames` names the three most recent frame numbers, and
-/// `snapshotRef` is derived from the frame count. Keeping this identical is
-/// what lets a server-fed camera and a browser-fed one produce
-/// indistinguishable events downstream.
-fn classify_payload(
-    camera_id: &str,
-    object_id: Uuid,
-    frame: u64,
-    image_b64: &str,
-) -> serde_json::Value {
-    serde_json::json!({
-        "event": {
-            "objectId": object_id.to_string(),
-            "class": "moving_region",
-            "confidence": 0.98,
-            "frames": [frame.saturating_sub(2), frame.saturating_sub(1), frame],
-            "cameraId": camera_id,
-            "snapshotRef": format!("frame-{frame}"),
-        },
-        "image": image_b64,
-    })
-}
-
 /// Request to start ingesting a camera.
 #[derive(Debug, Deserialize)]
 struct ConnectRequest {
@@ -160,10 +179,6 @@ struct ConnectRequest {
 }
 
 /// Connect a camera, replacing any existing connection under the same id.
-///
-/// Reconnecting under the same id is always safe: the previous ffmpeg
-/// process is stopped first, so retrying after a failure or changing the
-/// URL never leaves two processes fighting over the same camera slot.
 async fn connect(State(state): State<RtspState>, Json(req): Json<ConnectRequest>) -> Response {
     if req.camera_id.trim().is_empty() {
         return fail(StatusCode::BAD_REQUEST, "camera_id is required");
@@ -172,21 +187,7 @@ async fn connect(State(state): State<RtspState>, Json(req): Json<ConnectRequest>
         return fail(StatusCode::BAD_REQUEST, "url is required");
     }
 
-    stop_task(&state, &req.camera_id);
-
-    let redacted_url = redact_rtsp_url(&req.url);
-    let handle = tokio::spawn(capture_loop(
-        state.clone(),
-        req.camera_id.clone(),
-        req.url.clone(),
-    ));
-    lock(&state.tasks).insert(
-        req.camera_id.clone(),
-        CameraTask {
-            handle,
-            redacted_url,
-        },
-    );
+    start_camera(&state, req.camera_id.clone(), req.url.clone(), true);
 
     info!(camera_id = %req.camera_id, url = %redact_rtsp_url(&req.url), "rtsp camera connecting");
     (
@@ -215,6 +216,9 @@ async fn disconnect(
     let existed = lock(&state.tasks).contains_key(&req.camera_id);
     stop_task(&state, &req.camera_id);
     lock(&state.latest).remove(&req.camera_id);
+    if let Err(err) = state.store.remove(&req.camera_id) {
+        warn!(camera_id = %req.camera_id, %err, "failed to remove saved camera");
+    }
     if existed {
         (StatusCode::OK, Json(serde_json::json!({ "stopped": true }))).into_response()
     } else {
@@ -242,8 +246,7 @@ async fn status(State(state): State<RtspState>) -> Response {
 
 /// What `/latest` reports: the same [`FrameOutcome`] the HTTP frame API
 /// returns, plus the grid samples so the dashboard can render what the
-/// engine is actually seeing — not a separate, higher-resolution preview
-/// that might disagree with what was analysed.
+/// engine is actually seeing.
 #[derive(Debug, Serialize)]
 struct LatestResponse {
     connected: bool,
@@ -272,191 +275,6 @@ async fn latest(State(state): State<RtspState>, Path(camera_id): Path<String>) -
     .into_response()
 }
 
-/// Decode `url` at the tracking grid resolution and feed every frame into
-/// the deterministic engine, exactly as the browser's capture loop does.
-///
-/// Runs until ffmpeg exits — a bad URL, a dropped connection, or wrong
-/// credentials all end the same way: the process exits, this loop returns,
-/// and the camera drops out of the connected list. There is no automatic
-/// reconnect; a stream that keeps failing should be visibly stopped rather
-/// than silently retrying against the same bad address forever.
-async fn capture_loop(state: RtspState, camera_id: String, url: String) {
-    let mut child = match Command::new("ffmpeg")
-        .args([
-            "-rtsp_transport",
-            "tcp",
-            "-i",
-            &url,
-            "-an",
-            "-sn",
-            "-vf",
-            &format!("fps={CAPTURE_FPS},scale={GRID_WIDTH}:{GRID_HEIGHT},format=gray"),
-            "-f",
-            "rawvideo",
-            "-loglevel",
-            "error",
-            "-",
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        // Unread stderr would eventually fill its pipe buffer and stall
-        // ffmpeg; discarding it is safe because `-loglevel error` already
-        // keeps it to failures, which surface via the process exit instead.
-        .stderr(Stdio::null())
-        // Disconnecting a camera calls `.abort()` on this task, which drops
-        // this future — including `child` — mid-await rather than running
-        // the `child.kill()` at the bottom of this function. Without this,
-        // that leaves ffmpeg decoding a stream nobody is reading, forever.
-        .kill_on_drop(true)
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(err) => {
-            warn!(camera_id, %err, "could not start ffmpeg — is it installed and on PATH?");
-            return;
-        }
-    };
-
-    let Some(mut stdout) = child.stdout.take() else {
-        warn!(camera_id, "ffmpeg started with no stdout pipe");
-        return;
-    };
-
-    let frame_bytes = (GRID_WIDTH * GRID_HEIGHT) as usize;
-    let mut buf = vec![0u8; frame_bytes];
-    let mut classified: HashSet<Uuid> = HashSet::new();
-    let mut last_frame_at = Instant::now();
-    let mut frames_decoded: u64 = 0;
-
-    loop {
-        if let Err(err) = stdout.read_exact(&mut buf).await {
-            info!(camera_id, %err, frames_decoded, "rtsp stream ended");
-            break;
-        }
-        frames_decoded += 1;
-
-        let now = Instant::now();
-        let dt = if frames_decoded == 1 {
-            1.0 / f32::from(u16::try_from(CAPTURE_FPS).unwrap_or(8))
-        } else {
-            now.duration_since(last_frame_at).as_secs_f32()
-        };
-        last_frame_at = now;
-
-        let req = FrameRequest {
-            camera_id: camera_id.clone(),
-            width: GRID_WIDTH,
-            height: GRID_HEIGHT,
-            samples: buf.clone(),
-            dt_secs: Some(dt),
-            pinned_target: None,
-        };
-
-        let outcome = process_frame(&state.frames, req);
-
-        for object_id in &outcome.triggered {
-            if !classified.insert(*object_id) {
-                continue;
-            }
-            tokio::spawn(snapshot_and_classify(
-                url.clone(),
-                state.gateway_url.clone(),
-                camera_id.clone(),
-                *object_id,
-                outcome.frame,
-            ));
-        }
-
-        lock(&state.latest).insert(
-            camera_id.clone(),
-            LatestFrame {
-                outcome,
-                width: GRID_WIDTH,
-                height: GRID_HEIGHT,
-                samples: buf.clone(),
-            },
-        );
-    }
-
-    lock(&state.tasks).remove(&camera_id);
-    let _ = child.kill().await;
-}
-
-/// Grab one full-colour still and POST it to the gateway for classification.
-///
-/// Runs detached from the capture loop so a slow or failed classification
-/// never stalls frame ingestion — this mirrors the browser firing
-/// `void classifyObject(...)` without awaiting it.
-async fn snapshot_and_classify(
-    url: String,
-    gateway_url: String,
-    camera_id: String,
-    object_id: Uuid,
-    frame: u64,
-) {
-    let image = match Command::new("ffmpeg")
-        .args([
-            "-rtsp_transport",
-            "tcp",
-            "-i",
-            &url,
-            "-frames:v",
-            "1",
-            "-vf",
-            &format!("scale={SNAPSHOT_WIDTH}:-2"),
-            "-q:v",
-            "4",
-            "-f",
-            "mjpeg",
-            "-loglevel",
-            "error",
-            "-",
-        ])
-        .stdin(Stdio::null())
-        .kill_on_drop(true)
-        .output()
-        .await
-    {
-        Ok(out) if out.status.success() && !out.stdout.is_empty() => base64(&out.stdout),
-        Ok(out) => {
-            warn!(
-                camera_id,
-                %object_id,
-                status = %out.status,
-                "snapshot capture produced no image"
-            );
-            return;
-        }
-        Err(err) => {
-            warn!(camera_id, %object_id, %err, "could not start ffmpeg for a snapshot");
-            return;
-        }
-    };
-
-    let body = classify_payload(&camera_id, object_id, frame, &image);
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-    {
-        Ok(c) => c,
-        Err(err) => {
-            warn!(%err, "could not build an HTTP client for classification");
-            return;
-        }
-    };
-
-    let url = format!("{gateway_url}/api/classify");
-    match client.post(&url).json(&body).send().await {
-        Ok(res) if res.status().is_success() => {
-            info!(camera_id, %object_id, "classification requested");
-        }
-        Ok(res) => {
-            warn!(camera_id, %object_id, status = %res.status(), "gateway refused the classify request");
-        }
-        Err(err) => warn!(camera_id, %object_id, %err, "could not reach the gateway to classify"),
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -473,6 +291,7 @@ mod tests {
             tasks: Arc::new(Mutex::new(HashMap::new())),
             latest: Arc::new(Mutex::new(HashMap::new())),
             gateway_url: "http://localhost:8080".into(),
+            store: Arc::new(CameraStore::open_in_memory().unwrap()),
         }
     }
 
@@ -494,8 +313,6 @@ mod tests {
 
     #[test]
     fn a_password_containing_an_at_sign_is_still_fully_removed() {
-        // split_once('@') on the credential side would otherwise leave part
-        // of the password in the "redacted" output.
         let url = "rtsp://admin:p@ss@192.168.1.50:554/h264";
         let redacted = redact_rtsp_url(url);
         assert!(!redacted.contains("p@ss") && !redacted.contains("admin"));
@@ -505,26 +322,6 @@ mod tests {
     fn malformed_input_does_not_panic() {
         assert_eq!(redact_rtsp_url("not a url"), "not a url");
         assert_eq!(redact_rtsp_url(""), "");
-    }
-
-    #[test]
-    fn classify_payload_matches_the_browsers_exact_shape() {
-        let id = Uuid::nil();
-        let body = classify_payload("nvr-ch1", id, 42, "AAAA");
-        assert_eq!(body["event"]["class"], "moving_region");
-        assert!((body["event"]["confidence"].as_f64().unwrap() - 0.98).abs() < f64::EPSILON);
-        assert_eq!(body["event"]["frames"], serde_json::json!([40, 41, 42]));
-        assert_eq!(body["event"]["cameraId"], "nvr-ch1");
-        assert_eq!(body["event"]["snapshotRef"], "frame-42");
-        assert_eq!(body["event"]["objectId"], id.to_string());
-        assert_eq!(body["image"], "AAAA");
-    }
-
-    #[test]
-    fn classify_payload_never_panics_on_the_first_couple_of_frames() {
-        // frame.saturating_sub(2) on frame 0 or 1 must not underflow.
-        let body = classify_payload("cam", Uuid::nil(), 0, "");
-        assert_eq!(body["event"]["frames"], serde_json::json!([0, 0, 0]));
     }
 
     #[tokio::test]
