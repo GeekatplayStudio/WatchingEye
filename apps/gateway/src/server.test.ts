@@ -243,23 +243,32 @@ describe("activeIntent pipeline gating", () => {
     unit[0] = 1;
     const textUnit = new Array<number>(768).fill(0);
     textUnit[3] = 1;
+    const attrUnit = new Array<number>(512).fill(0);
+    attrUnit[5] = 1;
     const app = await buildServer({
-      classifier: async () => decisionResult("person"),
+      classifier: async () => ({
+        ...decisionResult("dog"),
+        descriptors: [{ key: "breed", value: "labrador" }],
+      }),
       embedder: async () => ({ values: unit, model: "dinov2-vits14-onnx" }),
       textEmbedder: async () => ({ values: textUnit, model: "stub-text-1" }),
+      attrEmbedder: async () => ({ values: attrUnit, model: "clip-vit-b32-onnx-bank" }),
     });
     await app.inject({
       method: "POST",
       url: "/api/classify",
       payload: { event: GATED_EVENT, image: "dGVzdA==" },
     });
-    const search = await app.inject({ method: "GET", url: "/api/dataset/search?q=person" });
+    const search = await app.inject({ method: "GET", url: "/api/dataset/search?q=dog" });
     expect(search.json().records.length).toBeGreaterThan(0);
     expect(search.json().records[0].embedModel).toBe("dinov2-vits14-onnx");
     expect(search.json().records[0].embedding).toHaveLength(384);
     expect(search.json().records[0].provenance.embed_model).toBe("dinov2-vits14-onnx");
     expect(search.json().records[0].textEmbedModel).toBe("stub-text-1");
     expect(search.json().records[0].textEmbedding).toHaveLength(768);
+    expect(search.json().records[0].attrEmbedModel).toBe("clip-vit-b32-onnx-bank");
+    expect(search.json().records[0].attrEmbedding).toHaveLength(512);
+    expect(search.json().records[0].provenance.attr_embed_model).toBe("clip-vit-b32-onnx-bank");
 
     const stats = await app.inject({ method: "GET", url: "/api/dataset/stats" });
     expect(stats.statusCode).toBe(200);

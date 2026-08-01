@@ -37,19 +37,32 @@ export function clipOpenVocabAvailable(): boolean {
   return existsSync(clipVisionPath()) && existsSync(clipTextEmbedsPath());
 }
 
-type TextBank = Record<string, number[]>;
+/** Precomputed CLIP text vectors keyed like `breed:golden_retriever`. */
+export type OpenVocabTextBank = Record<string, number[]>;
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
-let textBank: TextBank | null = null;
+let textBank: OpenVocabTextBank | null = null;
 
-function loadTextBank(): TextBank | null {
+/**
+ * Load (and cache) the open-vocab CLIP text bank JSON.
+ *
+ * @returns `null` when the file is missing or unreadable.
+ * @example
+ * const bank = loadOpenVocabTextBank();
+ */
+export function loadOpenVocabTextBank(): OpenVocabTextBank | null {
   if (textBank !== null) return textBank;
   try {
-    textBank = JSON.parse(readFileSync(clipTextEmbedsPath(), "utf8")) as TextBank;
+    textBank = JSON.parse(readFileSync(clipTextEmbedsPath(), "utf8")) as OpenVocabTextBank;
     return textBank;
   } catch {
     return null;
   }
+}
+
+/** True when the text-bank JSON is on disk (vision ONNX not required). */
+export function openVocabTextBankAvailable(): boolean {
+  return existsSync(clipTextEmbedsPath());
 }
 
 function session(): Promise<ort.InferenceSession> {
@@ -124,7 +137,7 @@ export class OnnxClipOpenVocabScorer implements OpenVocabScorer {
     const prefixes = keysForClass(objectClass);
     if (prefixes.length === 0) return [];
 
-    const bank = loadTextBank();
+    const bank = loadOpenVocabTextBank();
     if (bank === null) return [];
 
     let decoded: { data: Uint8Array; width: number; height: number };

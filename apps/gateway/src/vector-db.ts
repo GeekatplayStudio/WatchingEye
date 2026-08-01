@@ -7,6 +7,7 @@
  */
 import pg from "pg";
 import {
+  DATASET_ATTR_EMBED_DIM,
   DATASET_CLIP_EMBED_DIM,
   DATASET_EMBED_DIM,
   DATASET_TEXT_EMBED_DIM,
@@ -15,6 +16,16 @@ import {
   type DatasetRecord,
   type DatasetStoreLike,
 } from "./dataset.js";
+
+/** Shared SELECT list for dataset_events rows (pgvector columns as text). */
+const DATASET_ROW_SELECT = `
+  id, object_id, camera_id, class, license_plate, breed_or_model,
+  confidence, timestamp, evidence, descriptors, snapshot_ref,
+  embedding::text AS embedding, embed_model,
+  text_embedding::text AS text_embedding, text_embed_model,
+  clip_embedding::text AS clip_embedding, clip_embed_model,
+  attr_embedding::text AS attr_embedding, attr_embed_model, provenance
+`;
 
 /** Format a JS float array as a pgvector literal. */
 export function toVectorLiteral(values: number[]): string {
@@ -50,6 +61,8 @@ function rowToRecord(row: {
   text_embed_model?: string | null;
   clip_embedding?: unknown;
   clip_embed_model?: string | null;
+  attr_embedding?: unknown;
+  attr_embed_model?: string | null;
   provenance: DatasetProvenance;
 }): DatasetRecord {
   const record: DatasetRecord = {
@@ -70,6 +83,7 @@ function rowToRecord(row: {
   if (row.embed_model) record.embedModel = row.embed_model;
   if (row.text_embed_model) record.textEmbedModel = row.text_embed_model;
   if (row.clip_embed_model) record.clipEmbedModel = row.clip_embed_model;
+  if (row.attr_embed_model) record.attrEmbedModel = row.attr_embed_model;
   const embedding = parseVector(row.embedding);
   if (embedding !== undefined && embedding.length > 0) record.embedding = embedding;
   const textEmbedding = parseVector(row.text_embedding);
@@ -79,6 +93,10 @@ function rowToRecord(row: {
   const clipEmbedding = parseVector(row.clip_embedding);
   if (clipEmbedding !== undefined && clipEmbedding.length > 0) {
     record.clipEmbedding = clipEmbedding;
+  }
+  const attrEmbedding = parseVector(row.attr_embedding);
+  if (attrEmbedding !== undefined && attrEmbedding.length > 0) {
+    record.attrEmbedding = attrEmbedding;
   }
   return record;
 }
@@ -119,11 +137,13 @@ export class PgDatasetStore implements DatasetStoreLike {
         text_embed_model TEXT,
         clip_embedding vector(${DATASET_CLIP_EMBED_DIM}),
         clip_embed_model TEXT,
+        attr_embedding vector(${DATASET_ATTR_EMBED_DIM}),
+        attr_embed_model TEXT,
         provenance JSONB NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);
-    // Additive for DBs created before text RAG / CLIP multimodal landed.
+    // Additive for DBs created before text RAG / CLIP / attr banks landed.
     await this.pool.query(`
       ALTER TABLE dataset_events
         ADD COLUMN IF NOT EXISTS text_embedding vector(${DATASET_TEXT_EMBED_DIM})
@@ -139,6 +159,14 @@ export class PgDatasetStore implements DatasetStoreLike {
     await this.pool.query(`
       ALTER TABLE dataset_events
         ADD COLUMN IF NOT EXISTS clip_embed_model TEXT
+    `);
+    await this.pool.query(`
+      ALTER TABLE dataset_events
+        ADD COLUMN IF NOT EXISTS attr_embedding vector(${DATASET_ATTR_EMBED_DIM})
+    `);
+    await this.pool.query(`
+      ALTER TABLE dataset_events
+        ADD COLUMN IF NOT EXISTS attr_embed_model TEXT
     `);
   }
 
@@ -158,6 +186,9 @@ export class PgDatasetStore implements DatasetStoreLike {
     if (record.clipEmbedModel !== undefined) {
       provenance.clip_embed_model = record.clipEmbedModel;
     }
+    if (record.attrEmbedModel !== undefined) {
+      provenance.attr_embed_model = record.attrEmbedModel;
+    }
     const embedding =
       record.embedding !== undefined && record.embedding.length === DATASET_EMBED_DIM
         ? toVectorLiteral(record.embedding)
@@ -172,15 +203,21 @@ export class PgDatasetStore implements DatasetStoreLike {
       record.clipEmbedding.length === DATASET_CLIP_EMBED_DIM
         ? toVectorLiteral(record.clipEmbedding)
         : null;
+    const attrEmbedding =
+      record.attrEmbedding !== undefined &&
+      record.attrEmbedding.length === DATASET_ATTR_EMBED_DIM
+        ? toVectorLiteral(record.attrEmbedding)
+        : null;
     await this.pool.query(
       `INSERT INTO dataset_events (
         id, object_id, camera_id, class, license_plate, breed_or_model,
         confidence, timestamp, evidence, descriptors, snapshot_ref,
         embedding, embed_model, text_embedding, text_embed_model,
-        clip_embedding, clip_embed_model, provenance
+        clip_embedding, clip_embed_model, attr_embedding, attr_embed_model,
+        provenance
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,
-        $12::vector,$13,$14::vector,$15,$16::vector,$17,$18::jsonb
+        $12::vector,$13,$14::vector,$15,$16::vector,$17,$18::vector,$19,$20::jsonb
       ) ON CONFLICT (id) DO NOTHING`,
       [
         record.id,
@@ -200,6 +237,8 @@ export class PgDatasetStore implements DatasetStoreLike {
         record.textEmbedModel ?? null,
         clipEmbedding,
         record.clipEmbedModel ?? null,
+        attrEmbedding,
+        record.attrEmbedModel ?? null,
         JSON.stringify(provenance),
       ],
     );
@@ -209,11 +248,7 @@ export class PgDatasetStore implements DatasetStoreLike {
     const q = query.toLowerCase().trim();
     if (!q) return this.getAll(limit);
     const res = await this.pool.query(
-      `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
-              confidence, timestamp, evidence, descriptors, snapshot_ref,
-              embedding::text AS embedding, embed_model,
-              text_embedding::text AS text_embedding, text_embed_model,
-              clip_embedding::text AS clip_embedding, clip_embed_model, provenance
+      `SELECT ${DATASET_ROW_SELECT}
        FROM dataset_events
        WHERE lower(class) LIKE $1
           OR lower(coalesce(license_plate, '')) LIKE $1
@@ -231,11 +266,7 @@ export class PgDatasetStore implements DatasetStoreLike {
   async searchByEmbedding(embedding: number[], limit = 50): Promise<DatasetRecord[]> {
     if (embedding.length !== DATASET_EMBED_DIM) return [];
     const res = await this.pool.query(
-      `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
-              confidence, timestamp, evidence, descriptors, snapshot_ref,
-              embedding::text AS embedding, embed_model,
-              text_embedding::text AS text_embedding, text_embed_model,
-              clip_embedding::text AS clip_embedding, clip_embed_model, provenance
+      `SELECT ${DATASET_ROW_SELECT}
        FROM dataset_events
        WHERE embedding IS NOT NULL
        ORDER BY embedding <=> $1::vector
@@ -248,11 +279,7 @@ export class PgDatasetStore implements DatasetStoreLike {
   async searchByTextEmbedding(embedding: number[], limit = 50): Promise<DatasetRecord[]> {
     if (embedding.length !== DATASET_TEXT_EMBED_DIM) return [];
     const res = await this.pool.query(
-      `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
-              confidence, timestamp, evidence, descriptors, snapshot_ref,
-              embedding::text AS embedding, embed_model,
-              text_embedding::text AS text_embedding, text_embed_model,
-              clip_embedding::text AS clip_embedding, clip_embed_model, provenance
+      `SELECT ${DATASET_ROW_SELECT}
        FROM dataset_events
        WHERE text_embedding IS NOT NULL
        ORDER BY text_embedding <=> $1::vector
@@ -265,11 +292,7 @@ export class PgDatasetStore implements DatasetStoreLike {
   async searchByClipEmbedding(embedding: number[], limit = 50): Promise<DatasetRecord[]> {
     if (embedding.length !== DATASET_CLIP_EMBED_DIM) return [];
     const res = await this.pool.query(
-      `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
-              confidence, timestamp, evidence, descriptors, snapshot_ref,
-              embedding::text AS embedding, embed_model,
-              text_embedding::text AS text_embedding, text_embed_model,
-              clip_embedding::text AS clip_embedding, clip_embed_model, provenance
+      `SELECT ${DATASET_ROW_SELECT}
        FROM dataset_events
        WHERE clip_embedding IS NOT NULL
        ORDER BY clip_embedding <=> $1::vector
@@ -279,13 +302,22 @@ export class PgDatasetStore implements DatasetStoreLike {
     return res.rows.map(rowToRecord);
   }
 
+  async searchByAttrEmbedding(embedding: number[], limit = 50): Promise<DatasetRecord[]> {
+    if (embedding.length !== DATASET_ATTR_EMBED_DIM) return [];
+    const res = await this.pool.query(
+      `SELECT ${DATASET_ROW_SELECT}
+       FROM dataset_events
+       WHERE attr_embedding IS NOT NULL
+       ORDER BY attr_embedding <=> $1::vector
+       LIMIT $2`,
+      [toVectorLiteral(embedding), limit],
+    );
+    return res.rows.map(rowToRecord);
+  }
+
   async getAll(limit = 50): Promise<DatasetRecord[]> {
     const res = await this.pool.query(
-      `SELECT id, object_id, camera_id, class, license_plate, breed_or_model,
-              confidence, timestamp, evidence, descriptors, snapshot_ref,
-              embedding::text AS embedding, embed_model,
-              text_embedding::text AS text_embedding, text_embed_model,
-              clip_embedding::text AS clip_embedding, clip_embed_model, provenance
+      `SELECT ${DATASET_ROW_SELECT}
        FROM dataset_events
        ORDER BY timestamp DESC
        LIMIT $1`,

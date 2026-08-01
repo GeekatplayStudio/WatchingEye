@@ -19,7 +19,7 @@ done (exceptions require an ADR).
 | Phase 1 Edge detection | ✅ **1.1–1.5 done** (identities + pipeline events in SQLite) |
 | Phase 2 Super Agent | mostly done; **2.1** Rust LLM provider open; **2.2** VLM &lt;300 ms **miss** (best ~3.9 s `llava`) |
 | Phase 3 Multi-cam / edge | **3.3 + 3.5** ✅; Pi CI gate ✅; ESP32 board selected (firmware pending); split MCP open |
-| Phase 6 NL + vector dataset | **6.1, 6.2, 6.4, 6.5** ✅; **6.3** missing CLIP attr vectors column |
+| Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
 | Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice contracts only) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
@@ -33,7 +33,6 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 | Priority | Item | Gap |
 |----------|------|-----|
 | P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
-| P2 | **6.3** CLIP attr vectors | `clip_embedding` for search ✅; separate open-vocab attr vectors still open |
 | P2 | **2.1** Rust LLM provider | Orchestrator TS only |
 | P2 | **3.2** edge offline cache | Pi CI gate ✅; SQLite cache + sync-on-reconnect still open |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
@@ -323,14 +322,18 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
       `paddleocr`. Enable with `WATCHINGEYE_OCR=paddle` or `auto` (paddle →
       tesseract cascade). Regex/VLM fallback unchanged.
 
-### Step 6.3 — Multimodal vector dataset auto-builder (partial)
+### Step 6.3 — Multimodal vector dataset auto-builder ✅
 - [x] Persist gated enrollments + DINOv2 vectors into pgvector with
       provenance — `vector-db.ts` / `dataset_events` (`vector(384)`),
       classify enroll calls orchestrator `/embed` best-effort; memory
       fallback + `POST /api/dataset/similar` for cosine lookup
-- [ ] CLIP / open-vocab attribute vectors alongside appearance
+- [x] CLIP / open-vocab attribute vectors alongside appearance —
+      `attr_embedding vector(512)` + `attr_embed_model` (mean-pooled bank
+      text rows via orchestrator `/attr-embed`); soft-null without
+      `open_vocab_text_embeds.json`; distinct from 6.4 `clip_embedding`
+      (image tower)
 - Note: snapshot *bytes* still not retained (2.4 policy); only vectors +
-  refs. CLIP multimodal search is Step 6.4 (separate `clip_embedding`).
+  refs.
 
 ### Step 6.4 — Natural language recall & multimodal search ✅
 - [x] Grounded queries over dataset (plate / breed keywords, `yesterday` /
@@ -361,7 +364,7 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 5. ~~**1.4** — tracker soak + gray-sequence snapshot fixtures~~ ✅
 6. ~~**2.2** — fixture-image golden + opt-in GPU latency harness~~ ✅ (budget still open; best ~3.9 s `llava`)
 7. ~~**2.4** — event replay UI~~ ✅ (metadata path; snapshot bytes not stored)
-8. ~~**6.3** — DINOv2 dataset → pgvector on enroll~~ ✅ (CLIP attr vectors still open)
+8. ~~**6.3** — DINOv2 + open-vocab `attr_embedding` on enroll~~ ✅
 9. ~~**6.2** — OCR ANPR path + regex fallback~~ ✅
 10. ~~**6.4** — grounded keyword NL recall~~ ✅
 11. ~~**6.5** — live dataset count / intent metrics~~ ✅
@@ -378,7 +381,8 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 22. ~~**2.2 comparative VLM** — multi-model matrix; prefer `llava` (~3.9 s); budget still open~~ ✅
 23. ~~**ESP32 lab board** — Freenove ESP32-S3 CAM docs + board profile~~ ✅ (encode when hardware arrives)
 24. ~~**Pi CI** — `edge-node` aarch64 cross-compile gate in GitHub Actions~~ ✅
-25. **6.3 CLIP attr vectors / edge offline cache / ESP32 firmware encode** ← opportunistic next
+25. ~~**6.3 attr vectors** — `attr_embedding` bank text alongside appearance~~ ✅
+26. **edge offline cache / ESP32 firmware encode** ← opportunistic next
 
 ---
 

@@ -87,13 +87,15 @@ graph TD
       snapshot_ref TEXT NOT NULL,
       embedding vector(384),          -- DINOv2-small appearance
       text_embedding vector(768),     -- nomic / stub text RAG
-      clip_embedding vector(512),     -- CLIP ViT-B/32 multimodal
+      clip_embedding vector(512),     -- CLIP ViT-B/32 image (multimodal search)
+      attr_embedding vector(512),     -- open-vocab bank text (breed/color) — not image
       embed_model TEXT,
       provenance JSONB NOT NULL
   );
   ```
-- **Status (partial):** migrate + memory fallback; enroll best-effort
-  `/embed`, `/text-embed`, `/clip-embed`. Soft-null when towers missing.
+- **Status:** migrate + memory fallback; enroll best-effort `/embed`,
+  `/text-embed`, `/clip-embed`, `/attr-embed`. Soft-null when towers/banks
+  missing. `attr_embedding` ≠ `clip_embedding` (bank text vs image tower).
 
 ### 4. Natural Language Recall & Grounded RAG Search
 - Hybrid keyword ∪ nomic text-NN ∪ CLIP-NN via `GET`/`POST /api/dataset/recall`

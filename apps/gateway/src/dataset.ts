@@ -25,6 +25,15 @@ export const DATASET_TEXT_EMBED_MODEL = "nomic-embed-text";
 /** Default CLIP embed model id. */
 export const DATASET_CLIP_EMBED_MODEL = "clip-vit-b32-onnx";
 
+/**
+ * Open-vocab attribute bank width — same CLIP text dim as `clip_embedding`,
+ * but sourced from bank text rows (ROADMAP 6.3), not the image tower.
+ */
+export const DATASET_ATTR_EMBED_DIM = 512;
+
+/** Default attr-bank embed model id. */
+export const DATASET_ATTR_EMBED_MODEL = "clip-vit-b32-onnx-bank";
+
 /** Provenance attached when an enrollment was classified / embedded. */
 export interface DatasetProvenance {
   model_version: string;
@@ -37,6 +46,8 @@ export interface DatasetProvenance {
   text_embed_model?: string;
   /** CLIP multimodal model when a CLIP vector was stored. */
   clip_embed_model?: string;
+  /** Open-vocab attribute bank model when an attr vector was stored. */
+  attr_embed_model?: string;
 }
 
 export interface DatasetRecord {
@@ -60,6 +71,9 @@ export interface DatasetRecord {
   /** CLIP image embedding for multimodal NL/image recall. */
   clipEmbedding?: number[];
   clipEmbedModel?: string;
+  /** Mean-pooled open-vocab bank text vectors (not CLIP image). */
+  attrEmbedding?: number[];
+  attrEmbedModel?: string;
   provenance?: DatasetProvenance;
 }
 
@@ -73,6 +87,8 @@ export interface DatasetStoreLike {
   searchByTextEmbedding(embedding: number[], limit?: number): Promise<DatasetRecord[]>;
   /** CLIP embedding NN for multimodal search (separate from DINOv2 / nomic). */
   searchByClipEmbedding(embedding: number[], limit?: number): Promise<DatasetRecord[]>;
+  /** Open-vocab attr-bank NN (separate from CLIP image). */
+  searchByAttrEmbedding(embedding: number[], limit?: number): Promise<DatasetRecord[]>;
   getAll(limit?: number): Promise<DatasetRecord[]>;
   /** Total enrolled records (for live monitor metrics). */
   count(): Promise<number>;
@@ -154,6 +170,14 @@ export class DatasetStore implements DatasetStoreLike {
     const scored = this.records
       .filter((r) => r.clipEmbedding !== undefined && r.clipEmbedding.length === embedding.length)
       .map((r) => ({ r, score: cosineSimilarity(embedding, r.clipEmbedding!) }))
+      .sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit).map((s) => s.r);
+  }
+
+  public async searchByAttrEmbedding(embedding: number[], limit = 50): Promise<DatasetRecord[]> {
+    const scored = this.records
+      .filter((r) => r.attrEmbedding !== undefined && r.attrEmbedding.length === embedding.length)
+      .map((r) => ({ r, score: cosineSimilarity(embedding, r.attrEmbedding!) }))
       .sort((a, b) => b.score - a.score);
     return scored.slice(0, limit).map((s) => s.r);
   }

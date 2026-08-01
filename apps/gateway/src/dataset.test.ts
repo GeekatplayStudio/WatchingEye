@@ -86,6 +86,22 @@ describe("DatasetStore embeddings", () => {
     expect(hits[0]?.id).toBe("a");
   });
 
+  it("ranks attr-bank neighbours separately from CLIP image", async () => {
+    const store = new DatasetStore();
+    const attrA = new Array<number>(512).fill(0);
+    attrA[2] = 1;
+    const attrB = new Array<number>(512).fill(0);
+    attrB[3] = 1;
+    const a = baseRecord("a", unit(0));
+    a.attrEmbedding = attrA;
+    const b = baseRecord("b", unit(1));
+    b.attrEmbedding = attrB;
+    await store.insertRecord(a);
+    await store.insertRecord(b);
+    const hits = await store.searchByAttrEmbedding(attrA, 5);
+    expect(hits[0]?.id).toBe("a");
+  });
+
   it("keeps keyword search working alongside vectors", async () => {
     const store = new DatasetStore();
     const plate = baseRecord("plate", unit(2));

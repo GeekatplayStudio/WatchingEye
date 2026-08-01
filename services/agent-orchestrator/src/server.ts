@@ -38,6 +38,10 @@ import {
   type ClipEmbedder,
 } from "./clip-embed.js";
 import {
+  createDefaultAttrEmbedder,
+  type AttrEmbedder,
+} from "./attr-embed.js";
+import {
   createDefaultOpenVocabScorer,
   enrichDescriptorsFromOpenVocab,
   type OpenVocabHit,
@@ -60,12 +64,14 @@ export function buildOrchestrator(
   textEmbedder?: TextEmbedder,
   openVocabScorer?: OpenVocabScorer,
   clipEmbedder?: ClipEmbedder,
+  attrEmbedder?: AttrEmbedder,
 ): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const ocr = ocrProvider ?? createDefaultOcrProvider();
   const textEmbed = textEmbedder ?? createDefaultTextEmbedder();
   const openVocab = openVocabScorer ?? createDefaultOpenVocabScorer();
   const clipEmbed = clipEmbedder ?? createDefaultClipEmbedder();
+  const attrEmbed = attrEmbedder ?? createDefaultAttrEmbedder();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -100,6 +106,7 @@ export function buildOrchestrator(
       openVocab: openVocab.name,
       ocr: ocr.name,
       clipEmbed: clipEmbed.name,
+      attrEmbed: attrEmbed.name,
     };
   });
 
@@ -210,6 +217,34 @@ export function buildOrchestrator(
     if (result === null) {
       return reply.status(503).send({
         error: "clip embedder unavailable",
+        latencyMs: Date.now() - started,
+      });
+    }
+    return { embedding: result, latencyMs: Date.now() - started };
+  });
+
+  /**
+   * Open-vocab attribute bank embed (ROADMAP 6.3). Soft 503 when no bank
+   * keys match — gateway treats that as null and still enrolls.
+   */
+  app.post("/attr-embed", async (req, reply) => {
+    const body = req.body as {
+      descriptors?: Array<{ key?: string; value?: string }>;
+    };
+    const started = Date.now();
+    const descriptors = (body?.descriptors ?? [])
+      .filter(
+        (d): d is { key: string; value: string } =>
+          typeof d?.key === "string" && typeof d?.value === "string",
+      )
+      .map((d) => ({ key: d.key, value: d.value }));
+    if (descriptors.length === 0) {
+      return reply.status(400).send({ error: "descriptors array is required" });
+    }
+    const result = await attrEmbed.embed(descriptors);
+    if (result === null) {
+      return reply.status(503).send({
+        error: "attr embedder unavailable",
         latencyMs: Date.now() - started,
       });
     }

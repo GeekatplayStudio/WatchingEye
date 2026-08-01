@@ -20,6 +20,7 @@ import type { DetectionEvent, ObjectClass } from "./events.js";
 import { classify, type ClassifyResult } from "./classify.js";
 import { applyPatch, AVAILABLE_CLASSES, DEFAULT_SETTINGS, SettingsError, type Settings } from "./settings.js";
 import {
+  DATASET_ATTR_EMBED_MODEL,
   DATASET_CLIP_EMBED_MODEL,
   DATASET_EMBED_DIM,
   DATASET_EMBED_MODEL,
@@ -54,6 +55,10 @@ export interface ServerOptions {
     image?: string;
     text?: string;
   }) => Promise<{ values: number[]; model: string } | null>;
+  /** Injectable open-vocab attr embedder (orchestrator `/attr-embed` proxy). */
+  attrEmbedder?: (
+    descriptors: Array<{ key: string; value: string }>,
+  ) => Promise<{ values: number[]; model: string } | null>;
   /**
    * SQLite path for pipeline events when Postgres is unset.
    * Use `memory` in tests; default is `data/events.sqlite` (or Vitest → memory).
@@ -163,6 +168,33 @@ async function defaultClipEmbedder(input: {
   }
 }
 
+async function defaultAttrEmbedder(
+  descriptors: Array<{ key: string; value: string }>,
+): Promise<{ values: number[]; model: string } | null> {
+  if (descriptors.length === 0) return null;
+  try {
+    const res = await fetch(
+      `${process.env.ORCHESTRATOR_URL ?? "http://localhost:8085"}/attr-embed`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ descriptors }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as EmbedResponse;
+    const values = body.embedding?.values;
+    if (!Array.isArray(values) || values.length === 0) return null;
+    return {
+      values,
+      model: body.embedding?.model ?? DATASET_ATTR_EMBED_MODEL,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Flatten enroll fields into text for the semantic embedder. */
 function enrollTextBlob(record: DatasetRecord): string {
   const bits = [
@@ -189,6 +221,7 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
   const embedder = opts.embedder ?? defaultEmbedder;
   const textEmbedder = opts.textEmbedder ?? defaultTextEmbedder;
   const clipEmbedder = opts.clipEmbedder ?? defaultClipEmbedder;
+  const attrEmbedder = opts.attrEmbedder ?? defaultAttrEmbedder;
   let settings: Settings = { ...DEFAULT_SETTINGS };
   const sockets = new Set<{ send: (data: string) => void }>();
   /** Cameras become known when they send frames — nothing is pre-registered. */
@@ -598,6 +631,14 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
         record.clipEmbedding = clipEmbedded.values;
         record.clipEmbedModel = clipEmbedded.model;
         provenance.clip_embed_model = clipEmbedded.model;
+        record.provenance = provenance;
+      }
+
+      const attrEmbedded = await attrEmbedder(record.descriptors ?? []);
+      if (attrEmbedded !== null) {
+        record.attrEmbedding = attrEmbedded.values;
+        record.attrEmbedModel = attrEmbedded.model;
+        provenance.attr_embed_model = attrEmbedded.model;
         record.provenance = provenance;
       }
 
