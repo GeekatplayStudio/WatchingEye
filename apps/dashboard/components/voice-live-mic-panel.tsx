@@ -2,7 +2,7 @@
 
 /**
  * Push-to-talk duplex: MediaRecorder → command or ask → play spoken WAV.
- * Continuous always-on listen remains out of scope; use Wake gate to arm chunks.
+ * Pair with Wake gate continuous listen for browser armed resume (not always-on).
  */
 
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -127,8 +127,8 @@ export function VoiceLiveMicPanel() {
       <CardContent className="space-y-4 text-sm">
         <p className="text-muted-foreground">
           Hold to record, release to send. Ask mode runs recall→speak; command
-          mode returns a closed intent. Pair with Wake gate for armed chunks —
-          not continuous always-on listen.
+          mode returns a closed intent. After a wake, use this PTT window; Wake
+          gate continuous mode resumes listening when the window ends.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button

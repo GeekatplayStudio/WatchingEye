@@ -20,7 +20,7 @@ done (exceptions require an ADR).
 | Phase 2 Super Agent | mostly done; **2.1** LLM in TS orchestrator ✅ (ADR 0004); **2.2** VLM &lt;300 ms **miss** |
 | Phase 3 Multi-cam / edge | **3.2–3.5** ✅ (ESP32 firmware pending hardware); MCP Camera/Timeline/Alert ✅ |
 | Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
-| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice V.1–V.3 gate ✅; continuous always-on open) |
+| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice V.1–V.4 ✅; OS always-on / DoA open) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
 Durable multi-cam config + 4 synthetic pumps proven; live IP farms, firmware,
@@ -34,7 +34,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 |----------|------|-----|
 | P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
-| P3 | Continuous always-on voice | Wake gate + openWakeWord ✅; background continuous listen still open |
+| P3 | OS / background always-on | Browser continuous armed listen ✅; OS-level always-on still open |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
@@ -326,6 +326,16 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
 - [x] Voice UI armed/chunked mic → wake → short PTT window hint; stub fixture;
       copy states not production always-on
 
+### Step V.4 — Continuous armed listen ✅
+- [x] Opt-in continuous mic loop posts chunks to existing `/api/voice/wake`
+      until the user stops (no new wake backend)
+- [x] On wake: open the short PTT window; **resume** the wake loop after the
+      window (no re-arm required)
+- [x] Soft-fail unchanged (503 / reject → no invented wakes); UI copy:
+      browser continuous armed listen, not production always-on
+- [x] Pure loop/window state helper + unit tests (`lib/continuous-listen.ts`);
+      Voice page wiring/copy
+
 ---
 
 ## Phase 5 — Advanced
@@ -437,8 +447,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 34. ~~**V.1 live audio classifier (YAMNet ONNX)**~~ ✅ (soft-fail without weights)
 35. ~~**V.3 wake gate (armed/chunked)**~~ ✅ (stub + soft-fail engine; not continuous always-on)
 36. ~~**live openWakeWord binding + WAKE_MODEL**~~ ✅ (armed/chunked; hey_jarvis classifier)
-37. **Continuous always-on listen** — next voice cliff
-38. **A.5 DoA + wake→logic graph** — after continuous wake is real
+37. ~~**V.4 continuous armed listen**~~ ✅ (browser opt-in; resumes after PTT)
+38. **A.5 DoA + wake→logic graph** — next voice/spatial cliff
+39. **OS / background always-on** — beyond tab-open browser loop (optional later)
 
 ---
 

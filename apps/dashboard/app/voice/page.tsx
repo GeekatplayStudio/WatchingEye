@@ -1,5 +1,5 @@
 /**
- * Voice: STT → parse, facts → TTS, PTT duplex, YAMNet/stub events, wake gate.
+ * Voice: STT → parse, facts → TTS, PTT duplex, audio events, wake + continuous.
  */
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,7 @@ export default function VoicePage() {
         eyebrow="WatchingEye · Voice module"
         title="Voice"
         lede="Speech in is untrusted and rule-parsed. Speech out is templated from validated facts only — never free-form model text."
-        actions={<Badge variant="success">V.1–V.3</Badge>}
+        actions={<Badge variant="success">V.1–V.4</Badge>}
       />
       <VoiceWakePanel />
       <VoiceLiveMicPanel />
@@ -35,8 +35,8 @@ export default function VoicePage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           <code>WATCHINGEYE_WHISPER=stub|auto|cli</code>. Push-to-talk uses the
-          browser mic. Non-speech events use YAMNet when weights are present.
-          Wake gate is armed/chunked — not continuous production listen.
+          browser mic. Wake gate supports oneshot arm or continuous armed listen
+          (tab must stay open) — not production always-on.
         </CardContent>
       </Card>
       <Card>
@@ -47,7 +47,7 @@ export default function VoicePage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           Stub beep or <code>piper</code> CLI when an ONNX voice is present.
-          Always-on background listen is not claimed.
+          Background OS-level always-on listen is not claimed.
         </CardContent>
       </Card>
     </div>
