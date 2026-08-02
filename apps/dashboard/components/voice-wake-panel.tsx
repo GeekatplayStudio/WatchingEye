@@ -161,9 +161,10 @@ export function VoiceWakePanel() {
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <p className="text-muted-foreground">
-          Armed chunks → <code>/api/voice/wake</code>. Closed keyword{" "}
-          <code>watchingeye</code>. On hit, a short PTT window opens — not
-          production always-on listen.{" "}
+          Armed chunks → <code>/api/voice/wake</code>. Stub keyword{" "}
+          <code>watchingeye</code>; live openWakeWord uses allowlisted
+          classifier basename (default <code>hey_jarvis</code>). On hit, a short
+          PTT window opens — not production always-on.{" "}
           <code>WATCHINGEYE_WAKE=stub|auto|engine</code>.
         </p>
         <div className="flex flex-wrap items-center gap-2">

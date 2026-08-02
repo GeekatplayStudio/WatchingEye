@@ -63,6 +63,31 @@ if (Test-Path $yamnet) {
     }
 }
 
+# --- openWakeWord (optional; wake gate stays on stub without it) ---
+Write-Step "Downloading openWakeWord ONNX assets (optional)"
+$oww = "$models\voice\openwakeword"
+New-Item -ItemType Directory -Force -Path $oww | Out-Null
+$owwBase = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1"
+$owwOk = $true
+foreach ($f in @("melspectrogram.onnx", "embedding_model.onnx", "hey_jarvis_v0.1.onnx")) {
+    $dest = Join-Path $oww $f
+    if (Test-Path $dest) {
+        Write-Host "Already present: $dest"
+    } else {
+        try {
+            Invoke-WebRequest -Uri "$owwBase/$f" -OutFile $dest
+            Write-Host "Saved to $dest"
+        } catch {
+            Write-Host "Failed $f — wake engine stays on stub." -ForegroundColor Yellow
+            Remove-Item -Force $dest -ErrorAction SilentlyContinue
+            $owwOk = $false
+        }
+    }
+}
+if ($owwOk) {
+    Write-Host "openWakeWord ready (keyword hey_jarvis; not mapped to watchingeye)"
+}
+
 # --- YOLO detection model (ONNX export, needs Python + ultralytics) ---
 Write-Step "Exporting YOLO11-nano detection model to ONNX"
 $yolo = "$models\vision\yolo11n.onnx"
@@ -131,6 +156,7 @@ Write-Host "`nModel install complete. Inventory:" -ForegroundColor Green
 Write-Host "  Ollama:  llava (VLM), llama3.2:3b (LLM)"
 Write-Host "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
 Write-Host "  AudioEvt: models/voice/yamnet.onnx (YAMNet, optional; stub without it)"
+Write-Host "  Wake:    models/voice/openwakeword/* (openWakeWord, optional; stub without it)"
 Write-Host "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
 Write-Host "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"
 Write-Host "  OpenVocab: models/vision/clip_vit_b32_vision.onnx (+ text embeds, optional)"

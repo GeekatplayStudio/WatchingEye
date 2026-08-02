@@ -13,6 +13,8 @@ describe("StubWakeWordDetector", () => {
     const d = new StubWakeWordDetector();
     const hit = await d.detect(Buffer.from("WAKE:watchingeye\npayload"));
     expect(hit).toEqual({ keyword: "watchingeye", confidence: 0.95 });
+    const jarvis = await d.detect(Buffer.from("WAKE:hey_jarvis\n"));
+    expect(jarvis?.keyword).toBe("hey_jarvis");
   });
 
   it("returns null for unknown bytes (no false wake)", async () => {
@@ -73,11 +75,13 @@ describe("createWakeWordDetector", () => {
     }
   });
 
-  it("auto soft-falls to stub when engine weights are missing", () => {
+  it("auto soft-falls to stub when openWakeWord assets are missing", () => {
     const prevMode = process.env.WATCHINGEYE_WAKE;
     const prevModel = process.env.WAKE_MODEL;
+    const prevMel = process.env.WAKE_MEL_MODEL;
     process.env.WATCHINGEYE_WAKE = "auto";
-    process.env.WAKE_MODEL = path.join(process.cwd(), "definitely-missing-wake.bin");
+    process.env.WAKE_MODEL = path.join(process.cwd(), "definitely-missing-wake.onnx");
+    process.env.WAKE_MEL_MODEL = path.join(process.cwd(), "definitely-missing-mel.onnx");
     try {
       expect(createWakeWordDetector().name).toBe("stub");
     } finally {
@@ -85,6 +89,8 @@ describe("createWakeWordDetector", () => {
       else process.env.WATCHINGEYE_WAKE = prevMode;
       if (prevModel === undefined) delete process.env.WAKE_MODEL;
       else process.env.WAKE_MODEL = prevModel;
+      if (prevMel === undefined) delete process.env.WAKE_MEL_MODEL;
+      else process.env.WAKE_MEL_MODEL = prevMel;
     }
   });
 });

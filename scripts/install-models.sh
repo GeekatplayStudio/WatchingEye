@@ -62,6 +62,28 @@ else
     echo "YAMNet download failed — audio events stay on stub."
 fi
 
+# --- openWakeWord (optional; wake gate stays on stub without it) ---
+step "Downloading openWakeWord ONNX assets (optional)"
+OWW="$MODELS/voice/openwakeword"
+mkdir -p "$OWW"
+OWW_BASE="https://github.com/dscripka/openWakeWord/releases/download/v0.5.1"
+OWW_OK=1
+for f in melspectrogram.onnx embedding_model.onnx hey_jarvis_v0.1.onnx; do
+    dest="$OWW/$f"
+    if [ -f "$dest" ]; then
+        echo "Already present: $dest"
+    elif curl -fL -o "$dest" "$OWW_BASE/$f"; then
+        echo "Saved to $dest"
+    else
+        rm -f "$dest"
+        echo "Failed $f — wake engine stays on stub."
+        OWW_OK=0
+    fi
+done
+if [ "$OWW_OK" -eq 1 ]; then
+    echo "openWakeWord ready (keyword hey_jarvis; not mapped to watchingeye)"
+fi
+
 # --- YOLO detection model (ONNX export, needs Python + ultralytics) ---
 step "Exporting YOLO11-nano detection model to ONNX"
 YOLO="$MODELS/vision/yolo11n.onnx"
@@ -117,6 +139,7 @@ printf '\n\033[32mModel install complete. Inventory:\033[0m\n'
 echo "  Ollama:  llava (VLM), llama3.2:3b (LLM)"
 echo "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
 echo "  AudioEvt: models/voice/yamnet.onnx (YAMNet, optional; stub without it)"
+echo "  Wake:    models/voice/openwakeword/* (openWakeWord, optional; stub without it)"
 echo "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
 echo "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"
 echo "  OpenVocab: models/vision/clip_vit_b32_vision.onnx (+ text embeds, optional)"

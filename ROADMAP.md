@@ -34,7 +34,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 |----------|------|-----|
 | P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
-| P3 | Continuous always-on voice | Wake gate (armed/chunked) ✅; background continuous listen still open |
+| P3 | Continuous always-on voice | Wake gate + openWakeWord ✅; background continuous listen still open |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
@@ -314,11 +314,13 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
       not continuous always-on listen
 
 ### Step V.3 — Wake gate ✅
-- [x] `WakeDetection` schema + reject-unknown / low-confidence — closed keyword
-      `watchingeye`; provenance required
-- [x] Stub `WakeWordDetector` + reserved engine soft-fail —
-      `WATCHINGEYE_WAKE=stub|auto|engine`; CI stays stub; engine 503 until
-      Porcupine/openWakeWord binding + `WAKE_MODEL` land
+- [x] `WakeDetection` schema + reject-unknown / low-confidence — closed keywords
+      `watchingeye` \| `hey_jarvis`; provenance required
+- [x] Stub `WakeWordDetector` + **live openWakeWord ONNX** soft-fail —
+      `WATCHINGEYE_WAKE=stub|auto|engine`; CI stays stub; engine runs when
+      mel+embedding+classifier under `models/voice/openwakeword/` (install-models
+      optional); classifier basename allowlist only (no `hey_jarvis`→`watchingeye`
+      remap); missing assets → 503 / auto→stub
 - [x] Orchestrator `POST /voice/wake` + gateway `POST /api/voice/wake`
       (proxy only, no AI)
 - [x] Voice UI armed/chunked mic → wake → short PTT window hint; stub fixture;
@@ -434,8 +436,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 33. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
 34. ~~**V.1 live audio classifier (YAMNet ONNX)**~~ ✅ (soft-fail without weights)
 35. ~~**V.3 wake gate (armed/chunked)**~~ ✅ (stub + soft-fail engine; not continuous always-on)
-36. **Continuous always-on listen** / live Porcupine·openWakeWord binding — next voice cliff
-37. **A.5 DoA + wake→logic graph** — after continuous wake is real
+36. ~~**live openWakeWord binding + WAKE_MODEL**~~ ✅ (armed/chunked; hey_jarvis classifier)
+37. **Continuous always-on listen** — next voice cliff
+38. **A.5 DoA + wake→logic graph** — after continuous wake is real
 
 ---
 

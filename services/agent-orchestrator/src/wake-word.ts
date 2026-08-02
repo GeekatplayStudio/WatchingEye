@@ -6,26 +6,26 @@
  * reject — never invent a wake. Not a claim of production always-on listen.
  */
 
-import { existsSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import {
+  OpenWakeWordDetector,
+  openWakeWordAssetsAvailable,
+} from "./openwakeword-wake.js";
+import {
+  WakeDetectionSchema,
+  WakeKeywordSchema,
+  type WakeDetection,
+  type WakeKeyword,
+} from "./wake-schema.js";
 
-/** Closed wake keyword the system may report (extend only via schema). */
-export const WakeKeywordSchema = z.enum(["watchingeye"]);
-export type WakeKeyword = z.infer<typeof WakeKeywordSchema>;
+export {
+  WakeDetectionSchema,
+  WakeKeywordSchema,
+  type WakeDetection,
+  type WakeKeyword,
+} from "./wake-schema.js";
 
-/** Validated wake hit with provenance. */
-export const WakeDetectionSchema = z.object({
-  keyword: WakeKeywordSchema,
-  confidence: z.number().min(0).max(1),
-  provenance: z.object({
-    model_version: z.string().min(1),
-    timestamp: z.string().min(1),
-  }),
-});
-export type WakeDetection = z.infer<typeof WakeDetectionSchema>;
-
-/** Pluggable wake detector (stub today; optional engine soft-fails). */
+/** Pluggable wake detector (stub or openWakeWord ONNX). */
 export interface WakeWordDetector {
   readonly name: string;
   /**
@@ -43,7 +43,7 @@ export const WAKE_MIN_CONFIDENCE = 0.7;
 /**
  * Deterministic stub for CI / demos.
  *
- * - Prefix `WAKE:watchingeye` ASCII header → hit
+ * - Prefix `WAKE:watchingeye` or `WAKE:hey_jarvis` → hit
  * - Empty / unknown bytes → null (no false wake)
  */
 export class StubWakeWordDetector implements WakeWordDetector {
@@ -54,14 +54,14 @@ export class StubWakeWordDetector implements WakeWordDetector {
     confidence: number;
   } | null> {
     const head = Buffer.from(bytes.subarray(0, 64)).toString("utf8");
-    const m = /^WAKE:(watchingeye)\b/i.exec(head);
+    const m = /^WAKE:(watchingeye|hey_jarvis)\b/i.exec(head);
     if (m === null) return null;
     const keyword = WakeKeywordSchema.parse(m[1]!.toLowerCase());
     return { keyword, confidence: 0.95 };
   }
 }
 
-/** Engine assets missing or binding not wired. */
+/** Engine assets missing or binding failed. */
 export class WakeUnavailableError extends Error {
   constructor(message: string) {
     super(message);
@@ -69,45 +69,17 @@ export class WakeUnavailableError extends Error {
   }
 }
 
-/** Whether optional wake-engine weights are present on disk. */
-export function wakeEngineAvailable(
-  modelPath = process.env.WAKE_MODEL ?? "",
-): boolean {
-  return modelPath !== "" && existsSync(modelPath);
-}
-
-/**
- * Reserved live-engine adapter. Soft-fails until Porcupine/openWakeWord
- * weights + binding land in install-models — refuses rather than guessing.
- */
-export class EngineWakeWordDetector implements WakeWordDetector {
-  readonly name = "wake-engine";
-
-  constructor(
-    private readonly modelPath = process.env.WAKE_MODEL ?? "",
-  ) {}
-
-  async detect(_bytes: Uint8Array, _mimeType?: string): Promise<{
-    keyword: WakeKeyword;
-    confidence: number;
-  } | null> {
-    if (!wakeEngineAvailable(this.modelPath)) {
-      throw new WakeUnavailableError(
-        `wake engine assets missing (WAKE_MODEL); use WATCHINGEYE_WAKE=stub`,
-      );
-    }
-    throw new WakeUnavailableError(
-      "wake engine binding not wired yet — use stub fixture (WAKE:watchingeye)",
-    );
-  }
+/** @deprecated Prefer {@link openWakeWordAssetsAvailable}. */
+export function wakeEngineAvailable(): boolean {
+  return openWakeWordAssetsAvailable();
 }
 
 /**
  * Default detector from env.
  *
  * - `stub` — WAKE: header fixture (CI)
- * - `engine` — reserved live path (503 until assets + binding land)
- * - `auto` — stub today; will prefer engine when binding is wired + weights present
+ * - `engine` — openWakeWord only (503 if assets missing)
+ * - `auto` — openWakeWord when mel+embed+classifier present, else stub
  *
  * @example
  * ```ts
@@ -118,9 +90,8 @@ export class EngineWakeWordDetector implements WakeWordDetector {
 export function createWakeWordDetector(): WakeWordDetector {
   const mode = (process.env.WATCHINGEYE_WAKE ?? "auto").toLowerCase();
   if (mode === "stub") return new StubWakeWordDetector();
-  if (mode === "engine") return new EngineWakeWordDetector();
-  // Soft-fail: live Porcupine/openWakeWord binding not shipped yet.
-  void wakeEngineAvailable();
+  if (mode === "engine") return new OpenWakeWordDetector();
+  if (openWakeWordAssetsAvailable()) return new OpenWakeWordDetector();
   return new StubWakeWordDetector();
 }
 
@@ -234,11 +205,14 @@ export function registerWakeRoute(
       }
       return result;
     } catch (err) {
-      if (err instanceof WakeUnavailableError) {
+      if (
+        err instanceof WakeUnavailableError ||
+        (err instanceof Error && err.name === "WakeUnavailableError")
+      ) {
         return reply.status(503).send({
           error: "wake engine unavailable",
           detail: err.message,
-          hint: "set WATCHINGEYE_WAKE=stub or use the WAKE:watchingeye fixture",
+          hint: "set WATCHINGEYE_WAKE=stub or run scripts/install-models for openWakeWord",
         });
       }
       throw err;
