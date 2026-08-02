@@ -22,6 +22,7 @@ export interface ParsedTargetIntent {
   rawPrompt: string;
   targetClasses: string[];
   attributes: string[];
+  behaviors: string[];
   actionPolicy: "dataset_enroll" | "anpr_ocr" | "monitor" | "notify";
   /** True when the prompt asks to enroll sightings into the dataset. */
   datasetEnroll: boolean;
@@ -31,16 +32,17 @@ export interface ParsedTargetIntent {
 }
 
 /**
- * Parse a tracking prompt into typed target filters.
+ * Parse a tracking prompt into typed target filters and AI behavior triggers.
  *
  * @example
- * const intent = parseNaturalLanguageIntent("track and register all dogs");
- * // → dog, dataset_enroll, breed+color attributes
+ * const intent = parseNaturalLanguageIntent("notify me if a person waves or pulls out a weapon");
+ * // → person, behaviors: ["waving", "pulling_weapon"], actionPolicy: "notify"
  */
 export function parseNaturalLanguageIntent(prompt: string): ParsedTargetIntent {
   const lower = prompt.toLowerCase();
   const classes = new Set<string>();
   const attributes = new Set<string>();
+  const behaviors = new Set<string>();
   let actionPolicy: ParsedTargetIntent["actionPolicy"] = "monitor";
   let datasetEnroll = false;
   let anprEnabled = false;
@@ -60,14 +62,34 @@ export function parseNaturalLanguageIntent(prompt: string): ParsedTargetIntent {
     attributes.add("color");
     attributes.add("make");
   }
+  if (/\b(military|army|armored|tank|tactical)\b/.test(lower)) {
+    classes.add("car");
+    classes.add("truck");
+    attributes.add("military_type");
+    behaviors.add("military_vehicle");
+  }
   if (/\b(truck|trucks)\b/.test(lower)) {
     classes.add("truck");
     attributes.add("color");
     attributes.add("make");
   }
-  if (/\b(person|people|stranger|human|pedestrian)\b/.test(lower)) {
+  if (/\b(person|people|stranger|human|pedestrian|someone|individual)\b/.test(lower)) {
     classes.add("person");
     attributes.add("apparel");
+  }
+  if (/\b(missing person|lost person|search and rescue|forest|woods|stranded)\b/.test(lower)) {
+    classes.add("person");
+    attributes.add("location_context");
+    behaviors.add("missing_person");
+  }
+  if (/\b(wave|waving|signal|signaling|sos|hand gesture)\b/.test(lower)) {
+    classes.add("person");
+    behaviors.add("waving");
+  }
+  if (/\b(weapon|gun|firearm|pistol|rifle|knife|pull out|brandishing)\b/.test(lower)) {
+    classes.add("person");
+    attributes.add("weapon_type");
+    behaviors.add("pulling_weapon");
   }
   if (/\b(bicycle|bike)\b/.test(lower)) {
     classes.add("bicycle");
@@ -90,14 +112,14 @@ export function parseNaturalLanguageIntent(prompt: string): ParsedTargetIntent {
       actionPolicy = "dataset_enroll";
     }
   }
-  if (/\b(notify|alert|warn|alarm)\b/.test(lower)) {
+  if (/\b(notify|alert|warn|alarm|send|message)\b/.test(lower)) {
     actionPolicy = "notify";
   }
 
-  // "track all dogs" without "register" still means watch that class;
-  // enrollment is explicit. Tracking alone stays monitor unless notify/anpr.
-  if (classes.size > 0 && actionPolicy === "monitor" && /\btrack\b/.test(lower)) {
-    // keep monitor — watching without dataset enroll is valid
+  // Default confidence threshold adjusts based on threat/sensitivity level
+  let confidenceThreshold = 0.85;
+  if (behaviors.has("pulling_weapon") || behaviors.has("missing_person")) {
+    confidenceThreshold = 0.75; // Lower threshold to prioritize high recall on critical alerts
   }
 
   const targetClasses = Array.from(classes).filter((c) =>
@@ -108,9 +130,10 @@ export function parseNaturalLanguageIntent(prompt: string): ParsedTargetIntent {
     rawPrompt: prompt,
     targetClasses: targetClasses.length > 0 ? targetClasses : ["person"],
     attributes: Array.from(attributes),
+    behaviors: Array.from(behaviors),
     actionPolicy,
     datasetEnroll: datasetEnroll || actionPolicy === "dataset_enroll",
     anprEnabled,
-    confidenceThreshold: 0.85,
+    confidenceThreshold,
   };
 }

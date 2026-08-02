@@ -8,7 +8,7 @@ use crate::cameras_api::base64;
 use crate::rtsp::{lock, LatestFrame, RtspState, GRID_HEIGHT, GRID_WIDTH};
 use std::collections::HashSet;
 use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tracing::{info, warn};
@@ -100,8 +100,8 @@ pub(crate) async fn capture_loop(state: RtspState, camera_id: String, url: Strin
                 continue;
             }
             tokio::spawn(snapshot_and_classify(
+                state.clone(),
                 url.clone(),
-                state.gateway_url.clone(),
                 camera_id.clone(),
                 *object_id,
                 outcome.frame,
@@ -125,12 +125,20 @@ pub(crate) async fn capture_loop(state: RtspState, camera_id: String, url: Strin
 
 /// Grab one full-colour still and POST it to the gateway for classification.
 async fn snapshot_and_classify(
+    state: RtspState,
     url: String,
-    gateway_url: String,
     camera_id: String,
     object_id: Uuid,
     frame: u64,
 ) {
+    let _permit = match state.snapshot_semaphore.try_acquire() {
+        Ok(p) => p,
+        Err(_) => {
+            warn!(camera_id, %object_id, "snapshot skipped — max concurrent ffmpeg snapshot processes reached");
+            return;
+        }
+    };
+
     let image = match Command::new("ffmpeg")
         .args([
             "-rtsp_transport",
@@ -171,19 +179,8 @@ async fn snapshot_and_classify(
     };
 
     let body = classify_payload(&camera_id, object_id, frame, &image);
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-    {
-        Ok(c) => c,
-        Err(err) => {
-            warn!(%err, "could not build an HTTP client for classification");
-            return;
-        }
-    };
-
-    let url = format!("{gateway_url}/api/classify");
-    match client.post(&url).json(&body).send().await {
+    let url = format!("{}/api/classify", state.gateway_url);
+    match state.http_client.post(&url).json(&body).send().await {
         Ok(res) if res.status().is_success() => {
             info!(camera_id, %object_id, "classification requested");
         }

@@ -66,6 +66,19 @@ export function EventCard({
           {event.identity && (
             <Badge variant="success">{event.identity.name ?? "identity"}</Badge>
           )}
+          {event.behavior && event.behavior.behavior !== "unknown" && (
+            <Badge
+              variant={
+                event.behavior.behavior === "fighting" || event.behavior.behavior === "falling"
+                  ? "danger"
+                  : event.behavior.behavior === "loitering" || event.behavior.behavior === "running"
+                  ? "warning"
+                  : "success"
+              }
+            >
+              {event.behavior.behavior}
+            </Badge>
+          )}
         </div>
 
         {event.evidence.length > 0 && (

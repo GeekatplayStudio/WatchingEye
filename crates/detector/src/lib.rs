@@ -71,6 +71,7 @@ mod tests {
                 width: 1.0,
                 height: 1.0,
             },
+            contour: None,
             frame: 1,
             model: "test".into(),
             timestamp: Utc::now(),

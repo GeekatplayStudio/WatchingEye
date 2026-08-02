@@ -4,12 +4,12 @@
 //! Every event is serializable, timestamped, and tied to a tracked object.
 
 use chrono::{DateTime, Utc};
-use schemas::ObjectClass;
+use schemas::{BehaviorType, ObjectClass};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// What happened. Mirrors the PRD event list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum EventKind {
     /// Object newly detected and validated.
@@ -38,6 +38,13 @@ pub enum EventKind {
     AnimalAppeared,
     /// A validated detection with no known class.
     UnknownObject,
+    /// A validated behavior or posture action was observed.
+    BehaviorObserved {
+        /// Type of behavior detected.
+        behavior: BehaviorType,
+        /// Confidence or intensity score.
+        intensity: f32,
+    },
 }
 
 /// A pipeline event: the unit of communication between subsystems.
@@ -90,5 +97,21 @@ mod tests {
         let json = serde_json::to_string(&e).unwrap();
         assert!(json.contains("\"kind\":\"entered_zone\""));
         assert!(json.contains("\"zone\":\"garage\""));
+    }
+
+    #[test]
+    fn behavior_observed_event_serializes() {
+        let e = Event::new(
+            Uuid::new_v4(),
+            ObjectClass::Person,
+            EventKind::BehaviorObserved {
+                behavior: BehaviorType::Fighting,
+                intensity: 0.95,
+            },
+            "cam-2",
+        );
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(json.contains("\"kind\":\"behavior_observed\""));
+        assert!(json.contains("\"behavior\":\"fighting\""));
     }
 }

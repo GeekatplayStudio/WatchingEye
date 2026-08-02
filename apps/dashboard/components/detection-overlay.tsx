@@ -17,7 +17,7 @@ export function DetectionOverlay({ objects }: { objects: DetectedObject[] }) {
         const dimmed = o.filtered === true;
         const color = dimmed ? "hsl(var(--muted-foreground) / 0.5)" : "hsl(200 90% 60%)";
         const distance =
-          o.distance !== null
+          o.distance && o.distance !== null
             ? ` · ~${o.distance.metres < 10 ? o.distance.metres.toFixed(1) : o.distance.metres.toFixed(0)}m`
             : "";
         return (

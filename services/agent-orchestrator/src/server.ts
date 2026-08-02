@@ -48,6 +48,7 @@ import {
   type OpenVocabScorer,
 } from "./open-vocab.js";
 import { resolveVoiceCommand } from "./voice-command.js";
+import { analyzeBehavior, type BehaviorObservation } from "./behavior-analyzer.js";
 import { speakFacts } from "./voice-speak.js";
 import type { SpeechRecognizer, SpeechSynthesizer } from "./voice.js";
 import { createSpeechRecognizer, WhisperUnavailableError } from "./whisper.js";
@@ -464,10 +465,20 @@ export function buildOrchestrator(
         }
       }
 
+      const decided = result.decision as { evidence?: Array<{ label: string; description: string }> } | null;
+      const evidenceItems = decided?.evidence ?? [];
+      const behavior = analyzeBehavior({
+        objectId: parsed.data.objectId,
+        evidence: evidenceItems,
+        descriptors,
+        snapshotRef: parsed.data.snapshotRef,
+      });
+
       return {
         outcome: result.outcome,
         decision: result.decision,
         identity,
+        behavior,
         descriptors,
         openVocab: openVocabHits,
         plate,
@@ -482,11 +493,27 @@ export function buildOrchestrator(
         outcome: "safe_default",
         decision: null,
         identity: null,
+        behavior: null,
         rejectionReason: err instanceof Error ? err.message : "classification failed",
         rawAnalysis: "",
         latencyMs: Date.now() - started,
       };
     }
+  });
+
+  app.post("/analyze-behavior", async (req) => {
+    const body = req.body as {
+      objectId?: string;
+      evidence?: Array<{ label: string; description: string }>;
+      descriptors?: Array<{ key: string; value: string }>;
+      snapshotRef?: string;
+    };
+    return analyzeBehavior({
+      objectId: body.objectId ?? "unknown",
+      evidence: body.evidence ?? [],
+      descriptors: body.descriptors ?? [],
+      snapshotRef: body.snapshotRef ?? "snapshot",
+    });
   });
 
   return app;

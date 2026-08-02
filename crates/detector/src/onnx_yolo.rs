@@ -130,6 +130,7 @@ impl Detector for OnnxYoloDetector {
                         width: w,
                         height: h,
                     },
+                    contour: None,
                     frame: frame.number,
                     model: MODEL_ID.into(),
                     timestamp: Utc::now(),

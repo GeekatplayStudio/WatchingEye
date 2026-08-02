@@ -284,6 +284,15 @@ pub fn payload_from_event(
         events::EventKind::ObjectRemoved => ("object_removed".to_owned(), None),
         events::EventKind::AnimalAppeared => ("animal_appeared".to_owned(), None),
         events::EventKind::UnknownObject => ("unknown_object".to_owned(), None),
+        events::EventKind::BehaviorObserved { behavior, .. } => (
+            format!(
+                "behavior_{}",
+                serde_json::to_string(behavior)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+            ),
+            None,
+        ),
     };
     NotifyPayload {
         event_id: event.id,

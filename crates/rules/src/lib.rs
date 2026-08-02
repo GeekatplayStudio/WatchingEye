@@ -30,7 +30,7 @@
 
 use chrono::Timelike;
 use events::{Event, EventKind};
-use schemas::ObjectClass;
+use schemas::{BehaviorType, ObjectClass};
 use serde::{Deserialize, Serialize};
 
 pub use uuid;
@@ -50,6 +50,8 @@ pub enum Condition {
         /// End hour, 0–23.
         end: u32,
     },
+    /// Event observed this specific behavior type.
+    HasBehavior(BehaviorType),
 }
 
 /// Action produced when a rule fires. Executed elsewhere, never here.
@@ -87,6 +89,9 @@ fn matches(cond: &Condition, event: &Event) -> bool {
         Condition::HourBetween { start, end } => {
             let hour = event.timestamp.hour();
             hour >= *start && hour <= *end
+        }
+        Condition::HasBehavior(behavior) => {
+            matches!(&event.kind, EventKind::BehaviorObserved { behavior: b, .. } if b == behavior)
         }
     }
 }
@@ -147,6 +152,36 @@ mod tests {
     fn rule_skips_wrong_class() {
         let actions = evaluate(&[person_garage_rule()], &garage_event(ObjectClass::Dog));
         assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn behavior_condition_matches_behavior_event() {
+        let rule = Rule {
+            name: "fighting-alert".into(),
+            conditions: vec![
+                Condition::IsClass(ObjectClass::Person),
+                Condition::HasBehavior(BehaviorType::Fighting),
+            ],
+            action: Action::Notify {
+                channel: "security".into(),
+            },
+        };
+        let event = Event::new(
+            Uuid::new_v4(),
+            ObjectClass::Person,
+            EventKind::BehaviorObserved {
+                behavior: BehaviorType::Fighting,
+                intensity: 0.9,
+            },
+            "cam-2",
+        );
+        let actions = evaluate(&[rule], &event);
+        assert_eq!(
+            actions,
+            vec![Action::Notify {
+                channel: "security".into()
+            }]
+        );
     }
 
     #[test]

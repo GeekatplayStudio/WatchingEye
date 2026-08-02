@@ -2,37 +2,22 @@
 
 /**
  * Webcam capture → Rust vision engine → overlay.
- *
- * The browser only captures and renders. Every decision (motion, regions,
- * identity, gating) is made by the Rust engine; this hook never infers
- * anything locally, so what you see on screen is exactly what the
- * deterministic core concluded.
+ * Supports HTMLVideoElement (Webcam) AND HTMLImageElement (ESP32 Wi-Fi / USB MJPEG Streams).
+ * Optimized frame rate throttling & browser resource management.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/**
- * Sample grid sent to the engine. Small on purpose — the engine works on
- * luminance, and this keeps the round trip well under a frame budget.
- *
- * Exported because `use-network-camera` needs the same numbers to size the
- * canvas it renders the engine's polled grid samples into — the RTSP
- * capture path decodes server-side at this exact resolution
- * (`services/vision-engine/src/rtsp.rs`), so the two must agree.
- */
 export const GRID_WIDTH = 96;
 export const GRID_HEIGHT = 72;
 
-/** A region the engine is tracking. */
 export interface TrackedRegion {
   id: string;
   bbox: { x: number; y: number; width: number; height: number };
   seen_frames: number;
   missed_frames: number;
   gate_open: boolean;
-  /** Samples per frame, used to extrapolate between engine updates. */
   vx: number;
   vy: number;
-  /** Direction and speed of travel. */
   motion: {
     heading: string;
     speed: number;
@@ -40,7 +25,6 @@ export interface TrackedRegion {
   };
 }
 
-/** Arrow glyph for a heading reported by the engine. */
 export const HEADING_ARROWS: Record<string, string> = {
   still: "•",
   up: "↑",
@@ -53,14 +37,12 @@ export const HEADING_ARROWS: Record<string, string> = {
   up_left: "↖",
 };
 
-/** Where the head is aiming, in normalised coordinates. */
 export interface AimTarget {
   x: number;
   y: number;
   area: number;
 }
 
-/** Pan/tilt command the engine produced for this frame. */
 export interface ServoCommand {
   pan_deg: number;
   tilt_deg: number;
@@ -68,7 +50,6 @@ export interface ServoCommand {
   reason: string;
 }
 
-/** Everything the engine concluded about one frame. */
 export interface FrameOutcome {
   frame: number;
   motion: boolean;
@@ -81,26 +62,17 @@ export interface FrameOutcome {
   servo: ServoCommand;
   target_id: string | null;
   pinned_target: [number, number] | null;
-  /** Whether a Point Cross assignment is following, holding, or inactive. */
   pinned_status: PinnedStatus;
-  /** The track the assignment is following, when it has one. */
   pinned_track_id: string | null;
 }
 
-/**
- * State of a Point Cross assignment. `following` means the engine has locked
- * onto the subject that was clicked and is tracking it as it moves;
- * `searching` means the assignment stands but nothing is there to follow.
- */
 export type PinnedStatus = "idle" | "following" | "searching";
 
-/** A camera the browser can see. */
 export interface CameraDevice {
   deviceId: string;
   label: string;
 }
 
-/** Who the registry says this is. */
 export interface IdentityInfo {
   id: string;
   name: string | null;
@@ -116,7 +88,6 @@ export interface IdentityInfo {
   camerasSeen?: string[];
 }
 
-/** A classification the guardrails accepted (or explicitly refused). */
 export interface Classification {
   objectId: string;
   label: string;
@@ -127,82 +98,68 @@ export interface Classification {
   rejectedReason?: string;
   latencyMs?: number;
   identity?: IdentityInfo;
-  /** Identifying attributes the model reported. */
   descriptors?: Array<{ key: string; value: string }>;
   at: string;
 }
 
-/** One labelled object from the full-frame detector. */
 export interface DetectedObject {
   class: string;
   cocoLabel: string;
   confidence: number;
-  /** Normalised (0..1) box on the original image. */
   bbox: { x: number; y: number; width: number; height: number };
-  distance: {
-    metres: number;
-    minMetres: number;
-    maxMetres: number;
-    basis: string;
-  } | null;
-  /** True when this class is unchecked in the class filter. */
+  distance?: { metres: number; basis?: string } | null;
   filtered?: boolean;
 }
 
-interface PipelineState {
+export interface WebcamPipelineState {
+  connected: boolean;
+  paused: boolean;
   devices: CameraDevice[];
   scanning: boolean;
-  connected: boolean;
   error: string | null;
   outcome: FrameOutcome | null;
   fps: number;
-  /** Round-trip time to the engine, in milliseconds. */
   latencyMs: number;
   classifications: Classification[];
   classifying: boolean;
-  /** Latest full-frame detections (stationary objects included). */
-  detections: DetectedObject[];
-  /** Round-trip of the last detection pass, ms. */
-  detectLatencyMs: number;
-  /** Set when the detector cannot run (e.g. model missing). */
-  detectError: string | null;
-  /** Active Point Cross Assign target position (normalized 0..1). */
   pinnedTarget: { x: number; y: number } | null;
+  detections: DetectedObject[];
+  detectLatencyMs: number;
+  detectError: string | null;
 }
 
-/**
- * Drive the capture loop.
- *
- * `scan()` enumerates cameras (labels appear only after permission is
- * granted, which is why connecting also re-scans). `connect(deviceId)`
- * triggers the browser's own permission prompt — the app never bypasses it.
- */
-export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | null>) {
-  const [state, setState] = useState<PipelineState>({
+export function useWebcamPipeline(
+  mediaRef: React.RefObject<HTMLVideoElement | HTMLImageElement | null>,
+) {
+  const [state, setState] = useState<WebcamPipelineState>({
+    connected: false,
+    paused: false,
     devices: [],
     scanning: false,
-    connected: false,
     error: null,
     outcome: null,
     fps: 0,
     latencyMs: 0,
     classifications: [],
     classifying: false,
+    pinnedTarget: null,
     detections: [],
     detectLatencyMs: 0,
     detectError: null,
-    pinnedTarget: null,
   });
+
+  const runningRef = useRef(false);
+  const pausedRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const snapshotRef = useRef<HTMLCanvasElement | null>(null);
-  const runningRef = useRef(false);
+  const lastFrameAtRef = useRef<number>(0);
   const framesRef = useRef<number[]>([]);
-  const lastFrameAtRef = useRef(0);
   const classifiedRef = useRef<Set<string>>(new Set());
   const pinnedTargetRef = useRef<{ x: number; y: number } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const setPinnedTarget = useCallback((pt: { x: number; y: number } | null) => {
+  const setPinnedTarget = useCallback((pt: { x: number; y: number }) => {
     pinnedTargetRef.current = pt;
     setState((s) => ({ ...s, pinnedTarget: pt }));
   }, []);
@@ -213,19 +170,17 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
   }, []);
 
   const scan = useCallback(async () => {
-    setState((s) => ({ ...s, scanning: true, error: null }));
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    setState((s) => ({ ...s, scanning: true }));
     try {
-      if (typeof navigator === "undefined" || !navigator.mediaDevices) {
-        throw new Error("This browser exposes no camera API (needs HTTPS or localhost).");
-      }
-      const all = await navigator.mediaDevices.enumerateDevices();
-      const devices = all
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices
         .filter((d) => d.kind === "videoinput")
-        .map((d, i) => ({
+        .map((d, idx) => ({
           deviceId: d.deviceId,
-          label: d.label !== "" ? d.label : `Camera ${i + 1} (allow access to see name)`,
+          label: d.label || `Camera ${idx + 1}`,
         }));
-      setState((s) => ({ ...s, devices, scanning: false }));
+      setState((s) => ({ ...s, devices: cameras, scanning: false }));
     } catch (err) {
       setState((s) => ({
         ...s,
@@ -237,10 +192,35 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
 
   const disconnect = useCallback(() => {
     runningRef.current = false;
+    pausedRef.current = false;
+    abortControllerRef.current?.abort();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    setState((s) => ({ ...s, connected: false, outcome: null, fps: 0 }));
+    setState((s) => ({ ...s, connected: false, paused: false, outcome: null, fps: 0 }));
   }, []);
+
+  const pauseFeed = useCallback(() => {
+    runningRef.current = false;
+    pausedRef.current = true;
+    abortControllerRef.current?.abort();
+    setState((s) => ({ ...s, paused: true }));
+  }, []);
+
+  const resumeFeed = useCallback(() => {
+    pausedRef.current = false;
+    runningRef.current = true;
+    setState((s) => ({ ...s, paused: false, connected: true }));
+    void captureLoop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const togglePause = useCallback(() => {
+    if (pausedRef.current) {
+      resumeFeed();
+    } else {
+      pauseFeed();
+    }
+  }, [pauseFeed, resumeFeed]);
 
   const connect = useCallback(
     async (deviceId: string) => {
@@ -251,13 +231,15 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
           audio: false,
         });
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+        const media = mediaRef.current;
+        if (media && "srcObject" in media) {
+          (media as HTMLVideoElement).srcObject = stream;
+          await (media as HTMLVideoElement).play();
         }
-        setState((s) => ({ ...s, connected: true }));
-        void scan(); // labels are only readable once permission is granted
+        setState((s) => ({ ...s, connected: true, paused: false }));
+        void scan();
         runningRef.current = true;
+        pausedRef.current = false;
         void captureLoop();
       } catch (err) {
         setState((s) => ({
@@ -269,11 +251,38 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
         }));
       }
     },
-    // captureLoop is stable via refs; scan is memoized.
+    // captureLoop is stable via refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scan, videoRef],
+    [scan, mediaRef],
   );
 
+  const startExternalStream = useCallback(() => {
+    if (runningRef.current && !pausedRef.current) return;
+    runningRef.current = true;
+    pausedRef.current = false;
+    setState((s) => ({ ...s, connected: true, paused: false, error: null }));
+    void captureLoop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const getMediaDimensions = (media: HTMLVideoElement | HTMLImageElement | null) => {
+    if (!media) return { w: 0, h: 0 };
+    if ("videoWidth" in media && (media as HTMLVideoElement).videoWidth > 0) {
+      return { w: (media as HTMLVideoElement).videoWidth, h: (media as HTMLVideoElement).videoHeight };
+    }
+    if ("naturalWidth" in media && (media as HTMLImageElement).naturalWidth > 0) {
+      return { w: (media as HTMLImageElement).naturalWidth, h: (media as HTMLImageElement).naturalHeight };
+    }
+    if ("width" in media && media.width > 0) {
+      return { w: media.width, h: media.height };
+    }
+    return { w: 0, h: 0 };
+  };
+
+  /**
+   * Paced Frame Sampling Loop.
+   * Throttled to ~10 FPS (100ms interval) to prevent net::ERR_INSUFFICIENT_RESOURCES
+   */
   const captureLoop = useCallback(async () => {
     if (canvasRef.current === null) {
       canvasRef.current = document.createElement("canvas");
@@ -281,29 +290,37 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
       canvasRef.current.height = GRID_HEIGHT;
     }
     const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
-    while (runningRef.current) {
-      const video = videoRef.current;
-      if (ctx === null || video === null || video.videoWidth === 0) {
-        await new Promise((r) => setTimeout(r, 100));
+    
+    while (runningRef.current && !pausedRef.current) {
+      const sentAt = performance.now();
+      const media = mediaRef.current;
+      const { w } = getMediaDimensions(media);
+
+      if (ctx === null || media === null || w === 0) {
+        await new Promise((r) => setTimeout(r, 150));
         continue;
       }
-      ctx.drawImage(video, 0, 0, GRID_WIDTH, GRID_HEIGHT);
-      const { data } = ctx.getImageData(0, 0, GRID_WIDTH, GRID_HEIGHT);
-      const samples = new Array<number>(GRID_WIDTH * GRID_HEIGHT);
-      for (let i = 0; i < samples.length; i += 1) {
-        const o = i * 4;
-        // Rec. 601 luma — the engine works on brightness only.
-        samples[i] =
-          (0.299 * (data[o] ?? 0) + 0.587 * (data[o + 1] ?? 0) + 0.114 * (data[o + 2] ?? 0)) | 0;
-      }
-      const sentAt = performance.now();
-      const dtSecs = lastFrameAtRef.current === 0 ? 0.1 : (sentAt - lastFrameAtRef.current) / 1000;
-      lastFrameAtRef.current = sentAt;
+
       try {
+        ctx.drawImage(media, 0, 0, GRID_WIDTH, GRID_HEIGHT);
+        const { data } = ctx.getImageData(0, 0, GRID_WIDTH, GRID_HEIGHT);
+        const samples = new Array<number>(GRID_WIDTH * GRID_HEIGHT);
+        for (let i = 0; i < samples.length; i += 1) {
+          const o = i * 4;
+          samples[i] =
+            (0.299 * (data[o] ?? 0) + 0.587 * (data[o + 1] ?? 0) + 0.114 * (data[o + 2] ?? 0)) | 0;
+        }
+
+        const dtSecs = lastFrameAtRef.current === 0 ? 0.1 : (sentAt - lastFrameAtRef.current) / 1000;
+        lastFrameAtRef.current = sentAt;
+
         const pt = pinnedTargetRef.current;
+        abortControllerRef.current = new AbortController();
+
         const res = await fetch("/engine/api/frame", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: abortControllerRef.current.signal,
           body: JSON.stringify({
             camera_id: "webcam",
             width: GRID_WIDTH,
@@ -313,6 +330,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
             pinned_target: pt ? [pt.x, pt.y] : null,
           }),
         });
+
         if (!res.ok) throw new Error(`engine ${res.status}`);
         const outcome = (await res.json()) as FrameOutcome;
         const now = performance.now();
@@ -325,49 +343,52 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
           error: null,
         }));
 
-        // The gate opened: this is the only moment a model is consulted.
         for (const objectId of outcome.triggered) {
           if (classifiedRef.current.has(objectId)) continue;
           classifiedRef.current.add(objectId);
           void classifyObject(objectId, outcome);
         }
-      } catch (err) {
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          break; // Silent exit on deliberate abort/pause
+        }
         setState((s) => ({
           ...s,
           error:
             err instanceof Error
-              ? `Vision engine unreachable (${err.message}). Start it with: cargo run -p vision-engine`
+              ? `Vision engine error: ${err.message}`
               : "engine error",
         }));
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 500));
       }
-      // Yield to the next paint rather than sleeping a fixed interval: the
-      // capture rate then follows whatever the machine can actually sustain
-      // instead of being pinned to an arbitrary ceiling.
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
+
+      // Enforce minimum 100ms delay between frames (~10 FPS max) to save browser resources
+      const elapsed = performance.now() - sentAt;
+      const targetDelay = 100;
+      if (elapsed < targetDelay) {
+        await new Promise((r) => setTimeout(r, targetDelay - elapsed));
+      }
     }
-  }, [videoRef]);
+  }, [mediaRef]);
 
   /** Capture a full-colour JPEG of the current frame for the vision model. */
   const grabSnapshot = useCallback((): string => {
-    const video = videoRef.current;
-    if (video === null || video.videoWidth === 0) return "";
+    const media = mediaRef.current;
+    const { w, h } = getMediaDimensions(media);
+    if (!media || w === 0) return "";
     if (snapshotRef.current === null) snapshotRef.current = document.createElement("canvas");
     const canvas = snapshotRef.current;
     canvas.width = 640;
-    canvas.height = Math.round((640 * video.videoHeight) / video.videoWidth);
+    canvas.height = Math.round((640 * h) / w);
     const ctx = canvas.getContext("2d");
     if (ctx === null) return "";
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(media, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/jpeg", 0.8).split(",")[1] ?? "";
-  }, [videoRef]);
+  }, [mediaRef]);
 
-  /**
-   * Send one gated object for classification. Failures surface as an
-   * explicit "unclassified" entry rather than being dropped.
-   */
   const classifyObject = useCallback(
     async (objectId: string, outcome: FrameOutcome) => {
+      if (pausedRef.current) return;
       setState((s) => ({ ...s, classifying: true }));
       const image = grabSnapshot();
       try {
@@ -441,18 +462,14 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
     [grabSnapshot],
   );
 
-  /**
-   * Full-frame detection loop, independent of the motion pipeline. This is
-   * what names things that are not moving — a parked car never trips motion
-   * detection, but YOLO still sees it. Runs at a gentle cadence because a
-   * full pass costs ~0.5s of CPU.
-   */
+  // Gentle YOLO object detection loop (~1.5s cadence)
   useEffect(() => {
-    if (!state.connected) return undefined;
+    if (!state.connected || state.paused) return undefined;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const pass = async () => {
+      if (pausedRef.current) return;
       const image = grabSnapshot();
       if (image === "") {
         timer = setTimeout(() => void pass(), 500);
@@ -469,7 +486,7 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
           objects?: DetectedObject[];
           error?: string;
         };
-        if (cancelled) return;
+        if (cancelled || pausedRef.current) return;
         if (!res.ok) {
           setState((s) => ({ ...s, detectError: body.error ?? `detector ${res.status}` }));
         } else {
@@ -481,14 +498,14 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
           }));
         }
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && !pausedRef.current) {
           setState((s) => ({
             ...s,
             detectError: err instanceof Error ? err.message : "detector unreachable",
           }));
         }
       }
-      if (!cancelled) timer = setTimeout(() => void pass(), 1200);
+      if (!cancelled && !pausedRef.current) timer = setTimeout(() => void pass(), 1500);
     };
     void pass();
 
@@ -496,15 +513,24 @@ export function useWebcamPipeline(videoRef: React.RefObject<HTMLVideoElement | n
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [state.connected, grabSnapshot]);
+  }, [state.connected, state.paused, grabSnapshot]);
 
-  useEffect(() => () => disconnect(), [disconnect]);
+  // Clean up all loops and connections immediately on page navigation
+  useEffect(() => {
+    return () => {
+      disconnect();
+    };
+  }, [disconnect]);
 
   return {
     ...state,
     scan,
     connect,
+    startExternalStream,
     disconnect,
+    pauseFeed,
+    resumeFeed,
+    togglePause,
     setPinnedTarget,
     clearPinnedTarget,
     gridWidth: GRID_WIDTH,

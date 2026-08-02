@@ -39,6 +39,7 @@ fn stub_detections() -> Vec<Detection> {
             width: 50.0,
             height: 120.0,
         },
+        contour: None,
         frame,
         model: "stub-yolo".into(),
         timestamp: Utc::now(),

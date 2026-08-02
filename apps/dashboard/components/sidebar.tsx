@@ -3,11 +3,13 @@
 /** Left navigation rail: monospace labels, amber marker on the active route. */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Eye, Settings2, GitBranch, Mic, Camera, BookOpen, Radar, Fingerprint } from "lucide-react";
+import { Activity, Eye, Settings2, GitBranch, Mic, Camera, BookOpen, Radar, Fingerprint, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/cameras", label: "Console", icon: Camera },
+  { href: "/logiboard", label: "LogiBoard", icon: GitBranch },
+  { href: "/esp32", label: "ESP32 Flasher", icon: Cpu },
   { href: "/discover", label: "Discover", icon: Radar },
   { href: "/", label: "Events", icon: Activity },
   { href: "/identities", label: "Identities", icon: Fingerprint },

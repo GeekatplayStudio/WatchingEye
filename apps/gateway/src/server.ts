@@ -41,6 +41,7 @@ import { applyActiveIntent } from "./intent-apply.js";
 import { recallFromRecords } from "./recall.js";
 import { ingestEdgeSync, type EdgeSyncBody } from "./edge-sync.js";
 import { runVoiceAsk, type VoiceParseResult, type VoiceSpeakResult } from "./voice-ask.js";
+import { registerEsp32Routes } from "./esp32-api.js";
 
 /** Options for building the server. */
 export interface ServerOptions {
@@ -387,6 +388,8 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
       return reply.status(503).send({ status: "down" });
     }
   });
+
+  await registerEsp32Routes(app);
 
   /**
    * Relay full-frame detection to the orchestrator. The gateway adds the

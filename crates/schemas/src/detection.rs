@@ -27,6 +27,9 @@ pub struct Detection {
     pub confidence: f32,
     /// Location in the frame.
     pub bbox: BoundingBox,
+    /// Optional polygon outline vertices `[[x, y], ...]` normalized `[0.0..1.0]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contour: Option<Vec<[f32; 2]>>,
     /// Frame number this detection came from.
     pub frame: u64,
     /// Identifier of the model that produced this (e.g. `"yolo11-nano"`).
@@ -61,6 +64,7 @@ mod tests {
                 width: 3.0,
                 height: 4.0,
             },
+            contour: None,
             frame: 42,
             model: "yolo11-nano".into(),
             timestamp: Utc::now(),

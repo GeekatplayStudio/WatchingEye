@@ -27,6 +27,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
@@ -63,6 +64,10 @@ pub(crate) struct RtspState {
     pub(crate) gateway_url: String,
     /// Durable camera config (restart restore).
     store: Arc<CameraStore>,
+    /// Shared HTTP client for posting classify requests.
+    pub(crate) http_client: reqwest::Client,
+    /// Concurrency semaphore capping parallel ffmpeg snapshot processes (max 3).
+    pub(crate) snapshot_semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl RtspState {
@@ -78,12 +83,18 @@ impl RtspState {
 /// Enabled cameras from `store` are re-spawned immediately so a restart
 /// resumes prior RTSP ingest without rediscovering.
 pub fn router(frames: FrameState, gateway_url: String, store: Arc<CameraStore>) -> Router {
+    let http_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let state = RtspState {
         frames,
         tasks: Arc::new(Mutex::new(HashMap::new())),
         latest: Arc::new(Mutex::new(HashMap::new())),
         gateway_url,
         store,
+        http_client,
+        snapshot_semaphore: Arc::new(tokio::sync::Semaphore::new(3)),
     };
     restore_enabled(&state);
     Router::new()
@@ -292,6 +303,8 @@ mod tests {
             latest: Arc::new(Mutex::new(HashMap::new())),
             gateway_url: "http://localhost:8080".into(),
             store: Arc::new(CameraStore::open_in_memory().unwrap()),
+            http_client: reqwest::Client::new(),
+            snapshot_semaphore: Arc::new(tokio::sync::Semaphore::new(3)),
         }
     }
 

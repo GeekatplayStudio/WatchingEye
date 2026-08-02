@@ -11,7 +11,7 @@ import type { LlmProvider } from "./llm.js";
 import type { TriggerEvent } from "./schema.js";
 
 /** Prompt version — recorded in provenance on every decision. */
-export const PROMPT_VERSION = "classify-v2-identity";
+export const PROMPT_VERSION = "classify-v3-behavior";
 
 /**
  * Attribute names the model may report, grouped by what they describe.
@@ -36,6 +36,10 @@ export const DESCRIPTOR_KEYS = [
   "carried_item",
   "accessory",
   "size",
+  "behavior",
+  "posture",
+  "gesture",
+  "gaze_direction",
 ] as const;
 
 /** Classes the model is allowed to choose from. Anything else is rejected

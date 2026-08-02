@@ -36,6 +36,25 @@ export interface EventIdentity {
   camerasSeen?: string[];
 }
 
+export interface BehaviorObservation {
+  id: string;
+  targetObjectId: string;
+  behavior:
+    | "looking"
+    | "waving"
+    | "fighting"
+    | "loitering"
+    | "running"
+    | "crouching"
+    | "falling"
+    | "gesturing"
+    | "unknown";
+  confidence: number;
+  intensity: number;
+  evidenceLabels: string[];
+  timestamp: string;
+}
+
 export interface DetectionEvent {
   id: string;
   objectId: string;
@@ -55,6 +74,8 @@ export interface DetectionEvent {
   filtered?: boolean;
   /** Identifying attributes reported for this sighting. */
   descriptors?: Array<{ key: string; value: string }>;
+  /** Behavior observation when analyzed. */
+  behavior?: BehaviorObservation;
   /** Who this is, when the identity registry recognised it. */
   identity?: EventIdentity;
   /** Full provenance when the gateway stores it (model + prompt versions). */
