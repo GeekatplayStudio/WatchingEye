@@ -214,15 +214,15 @@ export default function ConsolePage() {
               <img
                 ref={(el) => {
                   mediaRef.current = el;
+                  if (el) {
+                    setEsp32Connected(true);
+                    p.startExternalStream();
+                  }
                 }}
                 src={`http://localhost:8080/api/esp32/mjpeg-proxy?url=${encodeURIComponent(esp32StreamUrl)}`}
                 crossOrigin="anonymous"
                 alt="Freenove ESP32-S3 Wi-Fi Camera Feed"
                 className="w-full h-full object-contain"
-                onLoad={() => {
-                  setEsp32Connected(true);
-                  p.startExternalStream();
-                }}
                 onError={() => {
                   setEsp32Connected(false);
                 }}
@@ -234,14 +234,14 @@ export default function ConsolePage() {
               <img
                 ref={(el) => {
                   mediaRef.current = el;
+                  if (el) {
+                    setEsp32Connected(true);
+                    p.startExternalStream();
+                  }
                 }}
                 src="http://localhost:8080/api/esp32/usb-frame"
                 alt="Freenove ESP32-S3 USB Camera Feed"
                 className="w-full h-full object-contain"
-                onLoad={() => {
-                  setEsp32Connected(true);
-                  p.startExternalStream();
-                }}
               />
             )}
 

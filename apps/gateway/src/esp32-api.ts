@@ -132,20 +132,19 @@ export async function registerEsp32Routes(app: FastifyInstance): Promise<void> {
     ]));
 
     let response: Response | null = null;
-    for (const url of candidateUrls) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (res.ok && res.body) {
-          response = res;
-          break;
-        }
-      } catch {
-        // Try next candidate URL
-      }
+    try {
+      response = await Promise.any(
+        candidateUrls.map(async (url) => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 1200);
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (res.ok && res.body) return res;
+          throw new Error("Failed to fetch candidate stream");
+        })
+      );
+    } catch {
+      // All candidates failed
     }
 
     if (!response || !response.body) {
