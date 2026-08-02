@@ -84,6 +84,29 @@ if [ "$OWW_OK" -eq 1 ]; then
     echo "openWakeWord ready (keyword hey_jarvis; not mapped to watchingeye)"
 fi
 
+# --- Piper TTS voice (optional; stub beep works without it / without piper binary) ---
+step "Downloading Piper TTS voice: en_US-lessac-medium (optional)"
+PIPER_ONNX="$MODELS/voice/en_US-lessac-medium.onnx"
+PIPER_JSON="$PIPER_ONNX.json"
+PIPER_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
+if [ -f "$PIPER_ONNX" ] && [ -f "$PIPER_JSON" ]; then
+    echo "Already present: Piper en_US-lessac-medium"
+else
+    OK=1
+    if [ ! -f "$PIPER_ONNX" ]; then
+        curl -fL -o "$PIPER_ONNX" "$PIPER_BASE/en_US-lessac-medium.onnx" || OK=0
+    fi
+    if [ ! -f "$PIPER_JSON" ]; then
+        curl -fL -o "$PIPER_JSON" "$PIPER_BASE/en_US-lessac-medium.onnx.json" || OK=0
+    fi
+    if [ "$OK" -eq 1 ] && [ -f "$PIPER_ONNX" ] && [ -f "$PIPER_JSON" ]; then
+        echo "Saved Piper voice (+ config). Needs piper CLI on PATH for live TTS."
+    else
+        rm -f "$PIPER_ONNX" "$PIPER_JSON"
+        echo "Piper download failed — TTS stays on stub."
+    fi
+fi
+
 # --- YOLO detection model (ONNX export, needs Python + ultralytics) ---
 step "Exporting YOLO11-nano detection model to ONNX"
 YOLO="$MODELS/vision/yolo11n.onnx"
@@ -138,6 +161,7 @@ fi
 printf '\n\033[32mModel install complete. Inventory:\033[0m\n'
 echo "  Ollama:  llava (VLM), llama3.2:3b (LLM)"
 echo "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
+echo "  TTS:     models/voice/en_US-lessac-medium.onnx (+ .json; needs piper CLI)"
 echo "  AudioEvt: models/voice/yamnet.onnx (YAMNet, optional; stub without it)"
 echo "  Wake:    models/voice/openwakeword/* (openWakeWord, optional; stub without it)"
 echo "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"

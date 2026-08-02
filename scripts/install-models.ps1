@@ -88,6 +88,32 @@ if ($owwOk) {
     Write-Host "openWakeWord ready (keyword hey_jarvis; not mapped to watchingeye)"
 }
 
+# --- Piper TTS voice (optional; stub beep works without it / without piper binary) ---
+Write-Step "Downloading Piper TTS voice: en_US-lessac-medium (optional)"
+$piperOnnx = "$models\voice\en_US-lessac-medium.onnx"
+$piperJson = "$piperOnnx.json"
+$piperBase = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
+if ((Test-Path $piperOnnx) -and (Test-Path $piperJson)) {
+    Write-Host "Already present: Piper en_US-lessac-medium"
+} else {
+    try {
+        if (-not (Test-Path $piperOnnx)) {
+            Invoke-WebRequest -Uri "$piperBase/en_US-lessac-medium.onnx" -OutFile $piperOnnx
+        }
+        if (-not (Test-Path $piperJson)) {
+            Invoke-WebRequest -Uri "$piperBase/en_US-lessac-medium.onnx.json" -OutFile $piperJson
+        }
+        if ((Test-Path $piperOnnx) -and (Test-Path $piperJson)) {
+            Write-Host "Saved Piper voice (+ config). Needs piper CLI on PATH for live TTS."
+        } else {
+            Write-Host "Piper download incomplete — TTS stays on stub." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "Piper download failed — TTS stays on stub." -ForegroundColor Yellow
+        Remove-Item -Force $piperOnnx, $piperJson -ErrorAction SilentlyContinue
+    }
+}
+
 # --- YOLO detection model (ONNX export, needs Python + ultralytics) ---
 Write-Step "Exporting YOLO11-nano detection model to ONNX"
 $yolo = "$models\vision\yolo11n.onnx"
@@ -155,6 +181,7 @@ if ((Test-Path $clipOnnx) -and (Test-Path $clipText)) {
 Write-Host "`nModel install complete. Inventory:" -ForegroundColor Green
 Write-Host "  Ollama:  llava (VLM), llama3.2:3b (LLM)"
 Write-Host "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
+Write-Host "  TTS:     models/voice/en_US-lessac-medium.onnx (+ .json; needs piper CLI)"
 Write-Host "  AudioEvt: models/voice/yamnet.onnx (YAMNet, optional; stub without it)"
 Write-Host "  Wake:    models/voice/openwakeword/* (openWakeWord, optional; stub without it)"
 Write-Host "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"

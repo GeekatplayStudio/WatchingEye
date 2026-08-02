@@ -299,13 +299,16 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
       AudioSet indices only → closed kinds; non-allowlisted argmax → null;
       kind map committed under `services/agent-orchestrator/assets/`
 
-### Step V.2 — Voice response (partial)
+### Step V.2 — Voice response ✅
 - [x] `renderSpeech` from validated facts only (tested)
 - [x] Piper/stub `SpeechSynthesizer`; facts → `renderSpeech` → speak —
       orchestrator `POST /voice/speak` + gateway `POST /api/voice/speak`
       (proxy only); free-form `text` rejected; `WATCHINGEYE_PIPER=stub|auto|cli`;
-      stub WAV beep in CI; Voice page speak panel; Piper ONNX not yet in
-      `install-models`
+      stub WAV beep in CI; Voice page speak panel; live path still needs
+      `piper` CLI on PATH when weights are present
+- [x] `install-models` optionally provisions Piper ONNX voice (+ `.onnx.json`)
+      at `models/voice/en_US-lessac-medium.onnx`; missing assets / missing
+      `piper` binary → soft-fail / auto→stub (no invented speech)
 - [x] Two-way RAG ask/answer (**text path**) — gateway `POST /api/voice/ask`:
       `query_events` → dataset recall → `SpokenFact[]` → speak; citations
       returned for UI; recall prose never fed to TTS; Voice ask panel
@@ -448,8 +451,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 35. ~~**V.3 wake gate (armed/chunked)**~~ ✅ (stub + soft-fail engine; not continuous always-on)
 36. ~~**live openWakeWord binding + WAKE_MODEL**~~ ✅ (armed/chunked; hey_jarvis classifier)
 37. ~~**V.4 continuous armed listen**~~ ✅ (browser opt-in; resumes after PTT)
-38. **A.5 DoA + wake→logic graph** — next voice/spatial cliff
-39. **OS / background always-on** — beyond tab-open browser loop (optional later)
+38. ~~**V.2 Piper ONNX in install-models**~~ ✅ (en_US-lessac-medium + .json; CLI still required)
+39. **A.5 DoA + wake→logic graph** — next voice/spatial cliff
+40. **OS / background always-on** — beyond tab-open browser loop (optional later)
 
 ---
 

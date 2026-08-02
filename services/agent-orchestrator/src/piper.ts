@@ -1,9 +1,9 @@
 /**
- * Text-to-speech backends for the voice module (ROADMAP V.2 partial).
+ * Text-to-speech backends for the voice module (ROADMAP V.2).
  *
  * Callers must pass text from {@link renderSpeech} only — never free-form
  * model output. CI uses stub (`WATCHINGEYE_PIPER=stub`); `auto` prefers the
- * Piper CLI when binary + ONNX voice are present.
+ * Piper CLI when binary + ONNX voice (+ sibling `.onnx.json`) are present.
  */
 
 import { spawn } from "node:child_process";
@@ -14,10 +14,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SpeechSynthesizer } from "./voice.js";
 
-/** Default Piper ONNX voice path (optional; not yet in install-models). */
+/** Default Piper ONNX voice path from `scripts/install-models`. */
 export function defaultPiperModelPath(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
   return path.resolve(here, "../../../models/voice/en_US-lessac-medium.onnx");
+}
+
+/** Piper needs the ONNX and sibling `.onnx.json` config beside it. */
+export function piperModelAvailable(
+  modelPath = process.env.PIPER_MODEL ?? defaultPiperModelPath(),
+): boolean {
+  return existsSync(modelPath) && existsSync(`${modelPath}.json`);
 }
 
 /** Deterministic beep WAV for CI / offline demos. */
@@ -45,8 +52,10 @@ export class PiperCliSynthesizer implements SpeechSynthesizer {
   ) {}
 
   async speak(text: string): Promise<Uint8Array> {
-    if (!existsSync(this.modelPath)) {
-      throw new PiperUnavailableError(`model missing: ${this.modelPath}`);
+    if (!piperModelAvailable(this.modelPath)) {
+      throw new PiperUnavailableError(
+        `model or config missing: ${this.modelPath} (+ .json)`,
+      );
     }
     const dir = await mkdtemp(path.join(tmpdir(), "we-piper-"));
     const outPath = path.join(dir, "out.wav");
@@ -145,6 +154,6 @@ export function createSpeechSynthesizer(): SpeechSynthesizer {
   const bin = process.env.PIPER_BIN ?? "piper";
   const model = process.env.PIPER_MODEL ?? defaultPiperModelPath();
   if (mode === "cli") return new PiperCliSynthesizer(bin, model);
-  if (existsSync(model)) return new PiperCliSynthesizer(bin, model);
+  if (piperModelAvailable(model)) return new PiperCliSynthesizer(bin, model);
   return new StubSpeechSynthesizer();
 }
