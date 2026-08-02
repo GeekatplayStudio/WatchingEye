@@ -215,7 +215,7 @@ export default function ConsolePage() {
                 ref={(el) => {
                   mediaRef.current = el;
                 }}
-                src={`/api/esp32/mjpeg-proxy?url=${encodeURIComponent(esp32StreamUrl)}`}
+                src={`http://localhost:8080/api/esp32/mjpeg-proxy?url=${encodeURIComponent(esp32StreamUrl)}`}
                 crossOrigin="anonymous"
                 alt="Freenove ESP32-S3 Wi-Fi Camera Feed"
                 className="w-full h-full object-contain"
