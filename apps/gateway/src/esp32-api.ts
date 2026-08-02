@@ -117,18 +117,42 @@ export async function registerEsp32Routes(app: FastifyInstance): Promise<void> {
 
   /**
    * GET /api/esp32/mjpeg-proxy
-   * Proxy cross-origin ESP32 Wi-Fi MJPEG streams with clean CORS headers so HTML5 Canvas is never tainted.
+   * Proxy cross-origin ESP32 Wi-Fi MJPEG streams with clean CORS headers and automatic mDNS/AP failover.
    */
   app.get("/api/esp32/mjpeg-proxy", async (req, reply) => {
     const query = req.query as { url?: string };
-    const streamUrl = query.url || "http://192.168.4.24:81/stream";
+    const primaryUrl = query.url || "http://192.168.4.24:81/stream";
+
+    // Candidate stream endpoints if primary IP changed on router restart
+    const candidateUrls = Array.from(new Set([
+      primaryUrl,
+      "http://watchingeye-cam1.local:81/stream",
+      "http://192.168.4.1:81/stream",
+      "http://192.168.4.24:81/stream",
+    ]));
+
+    let response: Response | null = null;
+    for (const url of candidateUrls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok && res.body) {
+          response = res;
+          break;
+        }
+      } catch {
+        // Try next candidate URL
+      }
+    }
+
+    if (!response || !response.body) {
+      return reply.status(502).send({ error: "Failed to connect to ESP32 stream across candidate IPs" });
+    }
 
     try {
-      const response = await fetch(streamUrl);
-      if (!response.ok || !response.body) {
-        return reply.status(502).send({ error: "Failed to connect to ESP32 stream" });
-      }
-
       const contentType = response.headers.get("content-type") || "multipart/x-mixed-replace; boundary=frame";
       reply.raw.setHeader("Content-Type", contentType);
       reply.raw.setHeader("Access-Control-Allow-Origin", "*");

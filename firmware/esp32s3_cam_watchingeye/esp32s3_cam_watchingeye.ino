@@ -352,9 +352,10 @@ void startCameraServer() {
 }
 
 // Core 0 Task for USB Serial Video Stream
+// CRITICAL: Only grab frames if USB Serial TX buffer is free to prevent Wi-Fi PSRAM DMA starvation
 void usbVideoTask(void * pvParameters) {
   for (;;) {
-    if (cameraReady) {
+    if (cameraReady && Serial.availableForWrite() > 128) {
       camera_fb_t * fb = esp_camera_fb_get();
       if (fb) {
         Serial.printf("#RAW_JPG:%u#", fb->len);
@@ -363,7 +364,7 @@ void usbVideoTask(void * pvParameters) {
         esp_camera_fb_return(fb);
       }
     }
-    vTaskDelay(66 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -423,24 +424,24 @@ void setup() {
   }
   cameraReady = true;
 
-  // Sensor Initialization
+  // Sensor Initialization with Bright Indoor Auto-Exposure Calibration
   sensor_t * s = esp_camera_sensor_get();
   if (s != NULL) {
-    s->set_brightness(s, 0);
-    s->set_contrast(s, 0);
-    s->set_saturation(s, 0);
+    s->set_brightness(s, 2);     // Boost indoor brightness
+    s->set_contrast(s, 1);
+    s->set_saturation(s, 1);
     s->set_special_effect(s, 0);
     s->set_whitebal(s, 1);
     s->set_awb_gain(s, 1);
     s->set_wb_mode(s, 0);
     s->set_exposure_ctrl(s, 1);
-    s->set_aec2(s, 0);
+    s->set_aec2(s, 1);
     s->set_ae_level(s, 0);
     s->set_aec_value(s, 300);
     s->set_gain_ctrl(s, 1);
-    s->set_agc_gain(s, 0);
+    s->set_agc_gain(s, 8);      // Boost gain to prevent dark frames on boot
     s->set_gainceiling(s, (gainceiling_t)0);
-    s->set_bpc(s, 0);
+    s->set_bpc(s, 1);
     s->set_wpc(s, 1);
     s->set_raw_gma(s, 1);
     s->set_lenc(s, 1);
@@ -513,7 +514,6 @@ void setup() {
 }
 
 void loop() {
-  // Handle Wireless OTA Flashing Calls
   ArduinoOTA.handle();
 
   if (WiFi.status() == WL_CONNECTED) {
