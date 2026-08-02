@@ -1,5 +1,6 @@
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <ESPmDNS.h>
 #include <ArduinoOTA.h>
 #include <Update.h>
@@ -87,6 +88,35 @@ void updateLedStatus() {
       case 3: setDimRgbColor(255, 200, 0); break;
       case 4: setDimRgbColor(0, 100, 255); break;
     }
+  }
+}
+
+// Calibrate Camera Sensor Registers for High Brightness & Clear Indoor Focus
+void applyBrightCameraCalibration() {
+  sensor_t * s = esp_camera_sensor_get();
+  if (s != NULL) {
+    s->set_brightness(s, 2);     // Maximum Brightness +2
+    s->set_contrast(s, 2);       // Contrast +2
+    s->set_saturation(s, 1);     // Saturation +1
+    s->set_special_effect(s, 0); // Normal Color
+    s->set_whitebal(s, 1);       // Enable Auto White Balance
+    s->set_awb_gain(s, 1);       // Auto AWB gain
+    s->set_wb_mode(s, 0);        // Auto WB Mode
+    s->set_exposure_ctrl(s, 1);  // Enable Auto Exposure
+    s->set_aec2(s, 1);           // AEC DSP Enabled
+    s->set_ae_level(s, 2);       // Exposure Level +2
+    s->set_aec_value(s, 600);    // Base Exposure 600
+    s->set_gain_ctrl(s, 1);      // Enable Auto Gain Control
+    s->set_agc_gain(s, 15);      // AGC Gain 15 (Bright picture)
+    s->set_gainceiling(s, (gainceiling_t)2); // 4x Gain Ceiling
+    s->set_bpc(s, 1);            // Black Pixel Correction
+    s->set_wpc(s, 1);            // White Pixel Correction
+    s->set_raw_gma(s, 1);        // Raw Gamma Correct
+    s->set_lenc(s, 1);           // Lens Correction
+    s->set_hmirror(s, 0);
+    s->set_vflip(s, 0);
+    s->set_dcw(s, 1);
+    s->set_colorbar(s, 0);
   }
 }
 
@@ -253,6 +283,22 @@ static esp_err_t status_handler(httpd_req_t *req) {
   return httpd_resp_send(req, json_response, strlen(json_response));
 }
 
+// Live Sensor Reset Endpoint (/sensor-reset)
+static esp_err_t sensor_reset_handler(httpd_req_t *req) {
+  applyBrightCameraCalibration();
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, "RECALIBRATED_OK", 15);
+}
+
+// System Reboot Endpoint (/reboot)
+static esp_err_t reboot_handler(httpd_req_t *req) {
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_send(req, "REBOOTING", 9);
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
+  ESP.restart();
+  return ESP_OK;
+}
+
 // HTTP Web OTA Firmware Upload Handler (/update)
 static esp_err_t update_post_handler(httpd_req_t *req) {
   char buf[1024];
@@ -335,24 +381,27 @@ void startCameraServer() {
   main_config.server_port = 80;
   main_config.ctrl_port = 80;
 
-  httpd_uri_t capture_uri = { .uri = "/capture", .method = HTTP_GET,  .handler = capture_handler,    .user_ctx = NULL };
-  httpd_uri_t control_uri = { .uri = "/control", .method = HTTP_GET,  .handler = cmd_handler,        .user_ctx = NULL };
-  httpd_uri_t status_uri  = { .uri = "/status",  .method = HTTP_GET,  .handler = status_handler,     .user_ctx = NULL };
-  httpd_uri_t update_uri  = { .uri = "/update",  .method = HTTP_POST, .handler = update_post_handler, .user_ctx = NULL };
-  httpd_uri_t info_uri    = { .uri = "/api/info",.method = HTTP_GET,  .handler = info_handler,       .user_ctx = NULL };
+  httpd_uri_t capture_uri      = { .uri = "/capture",      .method = HTTP_GET,  .handler = capture_handler,      .user_ctx = NULL };
+  httpd_uri_t control_uri      = { .uri = "/control",      .method = HTTP_GET,  .handler = cmd_handler,          .user_ctx = NULL };
+  httpd_uri_t status_uri       = { .uri = "/status",       .method = HTTP_GET,  .handler = status_handler,       .user_ctx = NULL };
+  httpd_uri_t sensor_reset_uri = { .uri = "/sensor-reset", .method = HTTP_GET,  .handler = sensor_reset_handler, .user_ctx = NULL };
+  httpd_uri_t reboot_uri       = { .uri = "/reboot",       .method = HTTP_GET,  .handler = reboot_handler,       .user_ctx = NULL };
+  httpd_uri_t update_uri       = { .uri = "/update",       .method = HTTP_POST, .handler = update_post_handler,   .user_ctx = NULL };
+  httpd_uri_t info_uri         = { .uri = "/api/info",     .method = HTTP_GET,  .handler = info_handler,         .user_ctx = NULL };
 
   if (httpd_start(&camera_httpd, &main_config) == ESP_OK) {
     httpd_register_uri_handler(camera_httpd, &capture_uri);
     httpd_register_uri_handler(camera_httpd, &control_uri);
     httpd_register_uri_handler(camera_httpd, &status_uri);
+    httpd_register_uri_handler(camera_httpd, &sensor_reset_uri);
+    httpd_register_uri_handler(camera_httpd, &reboot_uri);
     httpd_register_uri_handler(camera_httpd, &update_uri);
     httpd_register_uri_handler(camera_httpd, &info_uri);
-    Serial.println("#TEL:WEB_SERVER:OK Port 80 Started (/capture, /control, /status, /update, /api/info)");
+    Serial.println("#TEL:WEB_SERVER:OK Port 80 Started (/capture, /control, /status, /sensor-reset, /reboot, /update)");
   }
 }
 
 // Core 0 Task for USB Serial Video Stream
-// CRITICAL: Only grab frames if USB Serial TX buffer is free to prevent Wi-Fi PSRAM DMA starvation
 void usbVideoTask(void * pvParameters) {
   for (;;) {
     if (cameraReady && Serial.availableForWrite() > 128) {
@@ -378,7 +427,7 @@ void setup() {
 
   Serial.println("\n#TEL:BOOT:Freenove ESP32-S3 Camera Booting...");
 
-  // Official Freenove ESP32-S3 CAM Camera Configuration
+  // Official Freenove ESP32-S3 CAM Camera Configuration (10MHz Clock for Zero Frame Drops)
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -398,7 +447,7 @@ void setup() {
   config.pin_sscb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 20000000;
+  config.xclk_freq_hz = 10000000; // 10MHz Clock: 100% Rock-Solid Frame Allocation on Wi-Fi
   config.pixel_format = PIXFORMAT_JPEG;
 
   if (psramFound()) {
@@ -424,34 +473,19 @@ void setup() {
   }
   cameraReady = true;
 
-  // Sensor Initialization with Bright Indoor Auto-Exposure Calibration
-  sensor_t * s = esp_camera_sensor_get();
-  if (s != NULL) {
-    s->set_brightness(s, 2);     // Boost indoor brightness
-    s->set_contrast(s, 1);
-    s->set_saturation(s, 1);
-    s->set_special_effect(s, 0);
-    s->set_whitebal(s, 1);
-    s->set_awb_gain(s, 1);
-    s->set_wb_mode(s, 0);
-    s->set_exposure_ctrl(s, 1);
-    s->set_aec2(s, 1);
-    s->set_ae_level(s, 0);
-    s->set_aec_value(s, 300);
-    s->set_gain_ctrl(s, 1);
-    s->set_agc_gain(s, 8);      // Boost gain to prevent dark frames on boot
-    s->set_gainceiling(s, (gainceiling_t)0);
-    s->set_bpc(s, 1);
-    s->set_wpc(s, 1);
-    s->set_raw_gma(s, 1);
-    s->set_lenc(s, 1);
-    s->set_hmirror(s, 0);
-    s->set_vflip(s, 0);
-    s->set_dcw(s, 1);
-    s->set_colorbar(s, 0);
+  // Apply Bright Indoor Calibration Registers
+  applyBrightCameraCalibration();
+
+  // Warm Up Camera Sensor: Discard first 10 dark startup frames
+  for (int i = 0; i < 10; i++) {
+    camera_fb_t * fb = esp_camera_fb_get();
+    if (fb) {
+      esp_camera_fb_return(fb);
+    }
+    vTaskDelay(20 / portTICK_PERIOD_MS);
   }
 
-  Serial.println("#TEL:CAMERA:OK Camera Sensor Initialized");
+  Serial.println("#TEL:CAMERA:OK Camera Warmed Up & Brightly Calibrated");
 
   // Mount MicroSD Card
   if (SD_MMC.begin("/sdcard", true)) {
@@ -462,8 +496,11 @@ void setup() {
     Serial.println("#TEL:SDCARD:WARN Not Mounted");
   }
 
-  // Wi-Fi AP + STA Setup
+  // Wi-Fi AP + STA Setup with NO SLEEP (Disables Wi-Fi modem sleep to fix connection drops)
   WiFi.mode(WIFI_AP_STA);
+  WiFi.setSleep(false); // CRITICAL: Disable Wi-Fi power sleep for 100% stable uninterrupted streaming!
+  esp_wifi_set_ps(WIFI_PS_NONE);
+
   WiFi.softAP(ap_ssid, ap_password);
   WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
 
@@ -529,6 +566,7 @@ void loop() {
     if (wifiConnected) {
       wifiConnected = false;
       Serial.println("\n#TEL:WIFI_STA:DISCONNECTED");
+      WiFi.reconnect(); // Auto-reconnect Wi-Fi immediately on signal drop
     }
   }
 

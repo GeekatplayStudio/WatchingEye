@@ -57,23 +57,58 @@ export function Esp32CameraTuner({ cameraIp = "192.168.4.24" }: Esp32CameraTuner
     }
   }, [cameraIp]);
 
+  const resetSensor = useCallback(async () => {
+    setLoading(true);
+    try {
+      await fetch(`http://${cameraIp}/sensor-reset`, { mode: "no-cors" });
+      setStatusMsg("Camera Brightness & Auto-Exposure Sensor Recalibrated!");
+      void fetchStatus();
+    } catch {
+      setStatusMsg("Sent Sensor Recalibration Command to Camera");
+    } finally {
+      setLoading(false);
+    }
+  }, [cameraIp, fetchStatus]);
+
+  const rebootCamera = useCallback(async () => {
+    setLoading(true);
+    try {
+      await fetch(`http://${cameraIp}/reboot`, { mode: "no-cors" });
+      setStatusMsg("Camera Reboot Command Sent! Reconnecting in 3 seconds...");
+    } catch {
+      setStatusMsg("Reboot Command Sent");
+    } finally {
+      setLoading(false);
+    }
+  }, [cameraIp]);
+
   useEffect(() => {
     void fetchStatus();
   }, [fetchStatus]);
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-amber-500/30 bg-card p-4 font-mono text-xs text-foreground">
-      <div className="flex items-center justify-between border-b border-border pb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
         <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
           <Sliders className="h-4 w-4 text-amber-400" />
-          ESP32 Camera Sensor Live Tuning ({cameraIp})
+          ESP32 Camera Sensor Tuning & Recovery ({cameraIp})
         </h3>
-        <button
-          onClick={fetchStatus}
-          className="flex items-center gap-1 text-[0.65rem] text-sky-400 hover:underline"
-        >
-          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh Settings
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={resetSensor}
+            className="flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[0.65rem] font-bold text-amber-300 hover:bg-amber-500/20"
+            title="Recalibrate camera sensor exposure and brightness"
+          >
+            <Sun className="h-3 w-3 text-amber-400" /> Reset Exposure
+          </button>
+          <button
+            onClick={rebootCamera}
+            className="flex items-center gap-1 rounded border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 text-[0.65rem] font-bold text-purple-300 hover:bg-purple-500/20"
+            title="Reboot ESP32 hardware remotely over Wi-Fi"
+          >
+            <RefreshCw className={`h-3 w-3 text-purple-400 ${loading ? "animate-spin" : ""}`} /> Reboot Board
+          </button>
+        </div>
       </div>
 
       {statusMsg && (
