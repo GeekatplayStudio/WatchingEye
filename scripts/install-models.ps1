@@ -44,6 +44,25 @@ if (Test-Path $whisper) {
     Write-Host "Saved to $whisper"
 }
 
+# --- YAMNet audio events (optional; stub detector works without it) ---
+Write-Step "Downloading YAMNet audio-event model (ONNX, optional)"
+$yamnet = "$models\voice\yamnet.onnx"
+if (Test-Path $yamnet) {
+    Write-Host "Already present: $yamnet"
+} else {
+    try {
+        Invoke-WebRequest -Uri "https://huggingface.co/jafet21/yamnetonnx/resolve/main/yamnet.onnx" -OutFile $yamnet
+        if (Test-Path $yamnet) {
+            Write-Host "Saved to $yamnet"
+        } else {
+            Write-Host "YAMNet download failed — audio events stay on stub." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "YAMNet download failed — audio events stay on stub." -ForegroundColor Yellow
+        Remove-Item -Force $yamnet -ErrorAction SilentlyContinue
+    }
+}
+
 # --- YOLO detection model (ONNX export, needs Python + ultralytics) ---
 Write-Step "Exporting YOLO11-nano detection model to ONNX"
 $yolo = "$models\vision\yolo11n.onnx"
@@ -111,6 +130,7 @@ if ((Test-Path $clipOnnx) -and (Test-Path $clipText)) {
 Write-Host "`nModel install complete. Inventory:" -ForegroundColor Green
 Write-Host "  Ollama:  llava (VLM), llama3.2:3b (LLM)"
 Write-Host "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
+Write-Host "  AudioEvt: models/voice/yamnet.onnx (YAMNet, optional; stub without it)"
 Write-Host "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
 Write-Host "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"
 Write-Host "  OpenVocab: models/vision/clip_vit_b32_vision.onnx (+ text embeds, optional)"

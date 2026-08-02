@@ -57,6 +57,7 @@ import {
   resolveAudioEvent,
   type AudioEventDetector,
 } from "./audio-event.js";
+import { YamnetUnavailableError } from "./yamnet-audio-event.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
@@ -130,20 +131,31 @@ export function buildOrchestrator(
   });
 
   /**
-   * Non-speech audio → closed AudioEvent (stub today; live classifier open).
+   * Non-speech audio → closed AudioEvent (stub or YAMNet ONNX).
    * Body: `{ audioBase64, mimeType? }`.
    */
   app.post("/voice/audio-event", async (req, reply) => {
     const body = req.body as { audioBase64?: string; mimeType?: string };
-    const result = await resolveAudioEvent({
-      audioBase64: body.audioBase64,
-      mimeType: body.mimeType,
-      detector: audioEvents,
-    });
-    if (result.outcome === "rejected" && result.rejectedReason === "audioBase64 is required") {
-      return reply.status(400).send(result);
+    try {
+      const result = await resolveAudioEvent({
+        audioBase64: body.audioBase64,
+        mimeType: body.mimeType,
+        detector: audioEvents,
+      });
+      if (result.outcome === "rejected" && result.rejectedReason === "audioBase64 is required") {
+        return reply.status(400).send(result);
+      }
+      return result;
+    } catch (err) {
+      if (err instanceof YamnetUnavailableError) {
+        return reply.status(503).send({
+          error: "yamnet unavailable",
+          detail: err.message,
+          hint: "set WATCHINGEYE_AUDIO_EVENT=stub or run scripts/install-models for yamnet.onnx",
+        });
+      }
+      throw err;
     }
-    return result;
   });
 
   /**

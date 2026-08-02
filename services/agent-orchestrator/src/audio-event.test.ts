@@ -1,6 +1,8 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AUDIO_EVENT_MIN_CONFIDENCE,
+  createAudioEventDetector,
   resolveAudioEvent,
   StubAudioEventDetector,
   type AudioEventDetector,
@@ -58,3 +60,35 @@ describe("resolveAudioEvent", () => {
     expect(r.rejectedReason).toMatch(/below/);
   });
 });
+
+describe("createAudioEventDetector", () => {
+  it("honours WATCHINGEYE_AUDIO_EVENT=stub", () => {
+    const prev = process.env.WATCHINGEYE_AUDIO_EVENT;
+    process.env.WATCHINGEYE_AUDIO_EVENT = "stub";
+    try {
+      expect(createAudioEventDetector().name).toBe("stub");
+    } finally {
+      if (prev === undefined) delete process.env.WATCHINGEYE_AUDIO_EVENT;
+      else process.env.WATCHINGEYE_AUDIO_EVENT = prev;
+    }
+  });
+
+  it("auto soft-falls to stub when ONNX weights are missing", () => {
+    const prevMode = process.env.WATCHINGEYE_AUDIO_EVENT;
+    const prevModel = process.env.YAMNET_MODEL;
+    process.env.WATCHINGEYE_AUDIO_EVENT = "auto";
+    process.env.YAMNET_MODEL = pathNoYamnet();
+    try {
+      expect(createAudioEventDetector().name).toBe("stub");
+    } finally {
+      if (prevMode === undefined) delete process.env.WATCHINGEYE_AUDIO_EVENT;
+      else process.env.WATCHINGEYE_AUDIO_EVENT = prevMode;
+      if (prevModel === undefined) delete process.env.YAMNET_MODEL;
+      else process.env.YAMNET_MODEL = prevModel;
+    }
+  });
+});
+
+function pathNoYamnet(): string {
+  return path.join(process.cwd(), "definitely-missing-yamnet.onnx");
+}

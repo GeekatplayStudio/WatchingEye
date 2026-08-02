@@ -2,7 +2,7 @@
 
 /**
  * Upload a clip → `/api/voice/audio-event` → closed AudioEvent or reject.
- * Stub detector only until a live classifier lands (ROADMAP V.1).
+ * Stub fixture always works; live YAMNet ONNX when install-models downloaded weights.
  */
 
 import { useState, useTransition } from "react";
@@ -59,19 +59,23 @@ export function VoiceAudioEventPanel() {
     });
   }
 
+  const detector = result?.detector?.model ?? result?.event?.provenance?.model_version;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between gap-2 text-base">
           Audio events
-          <Badge variant="outline">stub</Badge>
+          <Badge variant="outline">{detector ?? "stub|yamnet"}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <p className="text-muted-foreground">
           Closed kinds: <code>glass_break</code>, <code>bark</code>,{" "}
-          <code>other</code>. Unknown clips reject — no false positives. Live
-          YAMNet-class classifier still open.
+          <code>other</code>. Unknown / non-allowlisted clips reject — no false
+          positives. Live path: YAMNet ONNX when{" "}
+          <code>models/voice/yamnet.onnx</code> is present (
+          <code>WATCHINGEYE_AUDIO_EVENT=auto</code>); else stub.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" disabled={pending} onClick={submitStubBark}>

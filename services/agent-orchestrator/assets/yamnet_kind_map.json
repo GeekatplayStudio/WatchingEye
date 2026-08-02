@@ -1,0 +1,9 @@
+{
+  "model": "yamnet-onnx",
+  "sampleRateHz": 16000,
+  "comment": "Allowlisted AudioSet indices only (YAMNet 521-class). Unlisted argmax → null.",
+  "kinds": {
+    "bark": [70, 71, 73],
+    "glass_break": [435, 436, 437]
+  }
+}

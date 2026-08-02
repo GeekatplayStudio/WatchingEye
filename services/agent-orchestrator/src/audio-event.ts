@@ -6,6 +6,10 @@
  */
 
 import { z } from "zod";
+import {
+  YamnetAudioEventDetector,
+  yamnetAssetsAvailable,
+} from "./yamnet-audio-event.js";
 
 /** Closed set of non-speech audio events the system may report. */
 export const AudioEventKindSchema = z.enum(["glass_break", "bark", "other"]);
@@ -30,7 +34,7 @@ export class AudioEventRejectError extends Error {
   }
 }
 
-/** Pluggable detector (stub today; YAMNet/similar later). */
+/** Pluggable detector (stub or live YAMNet ONNX). */
 export interface AudioEventDetector {
   readonly name: string;
   /**
@@ -68,7 +72,11 @@ export class StubAudioEventDetector implements AudioEventDetector {
 }
 
 /**
- * Default detector from env (`WATCHINGEYE_AUDIO_EVENT=stub` or auto→stub).
+ * Default detector from env.
+ *
+ * - `stub` — KIND: header fixture (CI)
+ * - `onnx` — YAMNet only (errors if weights missing)
+ * - `auto` — YAMNet when `models/voice/yamnet.onnx` + kind map exist, else stub
  *
  * @example
  * ```ts
@@ -77,8 +85,10 @@ export class StubAudioEventDetector implements AudioEventDetector {
  * ```
  */
 export function createAudioEventDetector(): AudioEventDetector {
-  // Live YAMNet path is ROADMAP-open; always stub until then.
-  void (process.env.WATCHINGEYE_AUDIO_EVENT ?? "stub");
+  const mode = (process.env.WATCHINGEYE_AUDIO_EVENT ?? "auto").toLowerCase();
+  if (mode === "stub") return new StubAudioEventDetector();
+  if (mode === "onnx") return new YamnetAudioEventDetector();
+  if (yamnetAssetsAvailable()) return new YamnetAudioEventDetector();
   return new StubAudioEventDetector();
 }
 

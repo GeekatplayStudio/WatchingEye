@@ -20,7 +20,7 @@ done (exceptions require an ADR).
 | Phase 2 Super Agent | mostly done; **2.1** LLM in TS orchestrator ✅ (ADR 0004); **2.2** VLM &lt;300 ms **miss** |
 | Phase 3 Multi-cam / edge | **3.2–3.5** ✅ (ESP32 firmware pending hardware); MCP Camera/Timeline/Alert ✅ |
 | Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
-| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice STT/TTS/ask/PTT/audio-stub ✅; live audio classifier open) |
+| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice STT/TTS/ask/PTT/YAMNet-or-stub ✅; wake-word open) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
 Durable multi-cam config + 4 synthetic pumps proven; live IP farms, firmware,
@@ -34,8 +34,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 |----------|------|-----|
 | P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
-| P2 | **V.1** live audio classifier | Stub `AudioEvent` path ✅; YAMNet/similar still open |
-| P3 | Always-on voice | PTT duplex ✅; wake-word / continuous listen open |
+| P3 | Always-on voice | PTT duplex ✅; YAMNet audio-events ✅; wake-word / continuous listen open |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
@@ -283,7 +282,7 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
 
 ## Phase 4.5 — Voice Module
 
-### Step V.1 — Speech recognition (partial)
+### Step V.1 — Speech recognition ✅
 - [x] `VoiceCommand` schema + reject-unknown parse (tested)
 - [x] Whisper/stub `SpeechRecognizer`; transcribe → `parseTranscript` route —
       orchestrator `POST /voice/command` + gateway `POST /api/voice/command`
@@ -294,7 +293,11 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
       `glass_break` \| `bark` \| `other`; orchestrator `POST /voice/audio-event`
       + gateway proxy; unknown bytes reject (no false positives); Voice panel
       stub fixture; low confidence rejected
-- [ ] Live audio classifier (YAMNet/similar) for glass-break / bark
+- [x] Live audio classifier (YAMNet ONNX) for glass-break / bark —
+      `WATCHINGEYE_AUDIO_EVENT=stub|auto|onnx`; soft-fail without
+      `models/voice/yamnet.onnx` (install-models optional download); allowlisted
+      AudioSet indices only → closed kinds; non-allowlisted argmax → null;
+      kind map committed under `services/agent-orchestrator/assets/`
 
 ### Step V.2 — Voice response (partial)
 - [x] `renderSpeech` from validated facts only (tested)
@@ -412,13 +415,14 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 25. ~~**6.3 attr vectors** — `attr_embedding` bank text alongside appearance~~ ✅
 26. ~~**edge offline cache** — SQLite + hub sync (gate-open metadata)~~ ✅
 27. ~~**3.4 Split MCP** — Camera / Timeline / Alert + client demo~~ ✅
-28. ~~**V.1 Whisper STT → parse** — stub/cli + gateway proxy + Voice panel~~ ✅ (audio-events still open)
+28. ~~**V.1 Whisper STT → parse** — stub/cli + gateway proxy + Voice panel~~ ✅
 29. ~~**V.2 Piper/stub TTS** — facts→speak route + Voice panel~~ ✅
 30. ~~**V.2 ask text path** — query_events → recall → speak~~ ✅
 31. ~~**V.2 live mic PTT duplex** — MediaRecorder → ask/command → play~~ ✅
 32. ~~**V.1 audio-event stub** + **2.1 LLM-in-TS (ADR 0004)**~~ ✅
 33. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
-34. **V.1 live audio classifier (YAMNet)** / always-on wake-word — next cliffs
+34. ~~**V.1 live audio classifier (YAMNet ONNX)**~~ ✅ (soft-fail without weights)
+35. **Always-on / wake-word** — next voice cliff
 
 ---
 

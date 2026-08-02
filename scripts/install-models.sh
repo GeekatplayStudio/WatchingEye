@@ -49,6 +49,19 @@ else
     echo "Saved to $WHISPER"
 fi
 
+# --- YAMNet audio events (optional; stub detector works without it) ---
+step "Downloading YAMNet audio-event model (ONNX, optional)"
+YAMNET="$MODELS/voice/yamnet.onnx"
+if [ -f "$YAMNET" ]; then
+    echo "Already present: $YAMNET"
+elif curl -fL -o "$YAMNET" \
+    "https://huggingface.co/jafet21/yamnetonnx/resolve/main/yamnet.onnx"; then
+    echo "Saved to $YAMNET"
+else
+    rm -f "$YAMNET"
+    echo "YAMNet download failed — audio events stay on stub."
+fi
+
 # --- YOLO detection model (ONNX export, needs Python + ultralytics) ---
 step "Exporting YOLO11-nano detection model to ONNX"
 YOLO="$MODELS/vision/yolo11n.onnx"
@@ -103,6 +116,7 @@ fi
 printf '\n\033[32mModel install complete. Inventory:\033[0m\n'
 echo "  Ollama:  llava (VLM), llama3.2:3b (LLM)"
 echo "  Voice:   models/voice/ggml-base.en.bin (Whisper base.en)"
+echo "  AudioEvt: models/voice/yamnet.onnx (YAMNet, optional; stub without it)"
 echo "  Vision:  models/vision/yolo11n.onnx (YOLO11-nano)"
 echo "  ReID:    models/vision/dinov2_vits14.onnx (DINOv2-small appearance)"
 echo "  OpenVocab: models/vision/clip_vit_b32_vision.onnx (+ text embeds, optional)"
