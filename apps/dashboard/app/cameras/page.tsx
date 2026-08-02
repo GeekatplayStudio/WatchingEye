@@ -30,6 +30,7 @@ import { useWebcamPipeline } from "@/lib/use-webcam-pipeline";
 import { useEngineConfig } from "@/lib/use-engine-config";
 import { useServiceStatus } from "@/lib/use-service-status";
 import { Esp32CameraTuner } from "@/components/esp32-camera-tuner";
+import { NaturalLanguageRuleBar } from "@/components/nl-rule-bar";
 
 export default function ConsolePage() {
   const mediaRef = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
@@ -200,6 +201,9 @@ export default function ConsolePage() {
           />
         </div>
       </div>
+
+      {/* Natural Language Prompt Bar for Watching Prompts */}
+      <NaturalLanguageRuleBar />
 
       {/* Main Grid: Live Video Stream | AI commentary | tuning */}
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_20rem_15rem]">
