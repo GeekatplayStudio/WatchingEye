@@ -58,6 +58,11 @@ import {
   type AudioEventDetector,
 } from "./audio-event.js";
 import { YamnetUnavailableError } from "./yamnet-audio-event.js";
+import {
+  createWakeWordDetector,
+  registerWakeRoute,
+  type WakeWordDetector,
+} from "./wake-word.js";
 
 /** Request body for a classification. */
 interface ClassifyBody {
@@ -79,6 +84,7 @@ export function buildOrchestrator(
   speechRecognizer?: SpeechRecognizer,
   speechSynthesizer?: SpeechSynthesizer,
   audioEventDetector?: AudioEventDetector,
+  wakeWordDetector?: WakeWordDetector,
 ): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const ocr = ocrProvider ?? createDefaultOcrProvider();
@@ -89,6 +95,7 @@ export function buildOrchestrator(
   const speech = speechRecognizer ?? createSpeechRecognizer();
   const tts = speechSynthesizer ?? createSpeechSynthesizer();
   const audioEvents = audioEventDetector ?? createAudioEventDetector();
+  const wake = wakeWordDetector ?? createWakeWordDetector();
 
   // Resolved once, on first use, then reused: asking the daemon which
   // models exist on every frame would add a round trip to the hot path.
@@ -127,8 +134,11 @@ export function buildOrchestrator(
       whisper: speech.name,
       piper: tts.name,
       audioEvent: audioEvents.name,
+      wake: wake.name,
     };
   });
+
+  registerWakeRoute(app, wake);
 
   /**
    * Non-speech audio → closed AudioEvent (stub or YAMNet ONNX).

@@ -2,7 +2,7 @@
 
 /**
  * Push-to-talk duplex: MediaRecorder → command or ask → play spoken WAV.
- * Not always-on listening; wake-word remains ROADMAP-open.
+ * Continuous always-on listen remains out of scope; use Wake gate to arm chunks.
  */
 
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -127,7 +127,8 @@ export function VoiceLiveMicPanel() {
       <CardContent className="space-y-4 text-sm">
         <p className="text-muted-foreground">
           Hold to record, release to send. Ask mode runs recall→speak; command
-          mode returns a closed intent. Not always-on; no wake-word.
+          mode returns a closed intent. Pair with Wake gate for armed chunks —
+          not continuous always-on listen.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button

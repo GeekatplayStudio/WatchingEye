@@ -68,6 +68,36 @@ describe("gateway server", () => {
     await app.close();
   });
 
+  it("proxies wake-gate chunks without interpreting them", async () => {
+    const app = await buildServer({
+      voiceWake: async (body) => ({
+        outcome: "wake",
+        detection: {
+          keyword: "watchingeye",
+          confidence: 0.95,
+          provenance: { model_version: "stub", timestamp: "t" },
+        },
+        detector: { model: "stub" },
+        bytes: body.audioBase64?.length ?? 0,
+        latencyMs: 1,
+      }),
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/voice/wake",
+      payload: { audioBase64: Buffer.from("WAKE:watchingeye\n").toString("base64") },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().detection.keyword).toBe("watchingeye");
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/voice/wake",
+      payload: {},
+    });
+    expect(missing.statusCode).toBe(400);
+    await app.close();
+  });
+
   it("proxies voice commands without interpreting them", async () => {
     const app = await buildServer({
       voiceCommand: async (body) => ({

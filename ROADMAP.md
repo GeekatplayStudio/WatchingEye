@@ -20,7 +20,7 @@ done (exceptions require an ADR).
 | Phase 2 Super Agent | mostly done; **2.1** LLM in TS orchestrator ✅ (ADR 0004); **2.2** VLM &lt;300 ms **miss** |
 | Phase 3 Multi-cam / edge | **3.2–3.5** ✅ (ESP32 firmware pending hardware); MCP Camera/Timeline/Alert ✅ |
 | Phase 6 NL + vector dataset | **6.1–6.5** ✅ (`attr_embedding` bank text alongside appearance) |
-| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice STT/TTS/ask/PTT/YAMNet-or-stub ✅; wake-word open) |
+| Phase A / 4 / 4.5 / 5 | early or not started (servos ✅; voice V.1–V.3 gate ✅; continuous always-on open) |
 
 Roughly: **core single-camera → classify → identity → NL dataset loop is live.**
 Durable multi-cam config + 4 synthetic pumps proven; live IP farms, firmware,
@@ -34,7 +34,7 @@ voice TTS, and sub-300 ms VLM remain the cliffs.
 |----------|------|-----|
 | P1 | **2.2** VLM &lt;300 ms | Comparative miss on RTX 3090; best warm p95 ~3.9 s (`llava`) |
 | P2 | **3.1 / A.3** ESP32 | Freenove ESP32-S3 CAM (16 MB) selected; docs/board profile ready; firmware encode deferred |
-| P3 | Always-on voice | PTT duplex ✅; YAMNet audio-events ✅; wake-word / continuous listen open |
+| P3 | Continuous always-on voice | Wake gate (armed/chunked) ✅; background continuous listen still open |
 | P3 | Phase 4 / 5 | Federation, k8s, training, thermal — not started |
 
 ---
@@ -311,7 +311,18 @@ Optional later: neighbor graphs, multi-prototype banks, DINOv3, SigLIP.
       returned for UI; recall prose never fed to TTS; Voice ask panel
 - [x] Voice page live mic duplex loop — push-to-talk `MediaRecorder` →
       `/api/voice/ask` or `/api/voice/command` (audioBase64) → play speak WAV;
-      not always-on / no wake-word / no audio-event detector
+      not continuous always-on listen
+
+### Step V.3 — Wake gate ✅
+- [x] `WakeDetection` schema + reject-unknown / low-confidence — closed keyword
+      `watchingeye`; provenance required
+- [x] Stub `WakeWordDetector` + reserved engine soft-fail —
+      `WATCHINGEYE_WAKE=stub|auto|engine`; CI stays stub; engine 503 until
+      Porcupine/openWakeWord binding + `WAKE_MODEL` land
+- [x] Orchestrator `POST /voice/wake` + gateway `POST /api/voice/wake`
+      (proxy only, no AI)
+- [x] Voice UI armed/chunked mic → wake → short PTT window hint; stub fixture;
+      copy states not production always-on
 
 ---
 
@@ -422,7 +433,9 @@ Builds on Step 3.5. See ADR 0005 (partially implemented).
 32. ~~**V.1 audio-event stub** + **2.1 LLM-in-TS (ADR 0004)**~~ ✅
 33. **ESP32 firmware encode** ← opportunistic next (needs Freenove board)
 34. ~~**V.1 live audio classifier (YAMNet ONNX)**~~ ✅ (soft-fail without weights)
-35. **Always-on / wake-word** — next voice cliff
+35. ~~**V.3 wake gate (armed/chunked)**~~ ✅ (stub + soft-fail engine; not continuous always-on)
+36. **Continuous always-on listen** / live Porcupine·openWakeWord binding — next voice cliff
+37. **A.5 DoA + wake→logic graph** — after continuous wake is real
 
 ---
 
