@@ -270,11 +270,12 @@ export function useWebcamPipeline(
     if ("videoWidth" in media && (media as HTMLVideoElement).videoWidth > 0) {
       return { w: (media as HTMLVideoElement).videoWidth, h: (media as HTMLVideoElement).videoHeight };
     }
-    if ("naturalWidth" in media && (media as HTMLImageElement).naturalWidth > 0) {
+    if (
+      "naturalWidth" in media &&
+      (media as HTMLImageElement).naturalWidth > 0 &&
+      (media as HTMLImageElement).complete
+    ) {
       return { w: (media as HTMLImageElement).naturalWidth, h: (media as HTMLImageElement).naturalHeight };
-    }
-    if ("width" in media && media.width > 0) {
-      return { w: media.width, h: media.height };
     }
     return { w: 0, h: 0 };
   };
@@ -302,6 +303,10 @@ export function useWebcamPipeline(
       }
 
       try {
+        if ("naturalWidth" in media && ((media as HTMLImageElement).naturalWidth === 0 || !(media as HTMLImageElement).complete)) {
+          await new Promise((r) => setTimeout(r, 200));
+          continue;
+        }
         ctx.drawImage(media, 0, 0, GRID_WIDTH, GRID_HEIGHT);
         const { data } = ctx.getImageData(0, 0, GRID_WIDTH, GRID_HEIGHT);
         const samples = new Array<number>(GRID_WIDTH * GRID_HEIGHT);
@@ -382,8 +387,15 @@ export function useWebcamPipeline(
     canvas.height = Math.round((640 * h) / w);
     const ctx = canvas.getContext("2d");
     if (ctx === null) return "";
-    ctx.drawImage(media, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.8).split(",")[1] ?? "";
+    try {
+      if ("naturalWidth" in media && ((media as HTMLImageElement).naturalWidth === 0 || !(media as HTMLImageElement).complete)) {
+        return "";
+      }
+      ctx.drawImage(media, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.8).split(",")[1] ?? "";
+    } catch {
+      return "";
+    }
   }, [mediaRef]);
 
   const classifyObject = useCallback(
